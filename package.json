@@ -1,0 +1,12 @@
+{
+  "name": "commerce-core-repo-tooling",
+  "private": true,
+  "description": "레포 루트 전용 도구(commitlint, husky) 관리용. backend/frontend 앱 의존성과는 무관.",
+  "scripts": {
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.5.0",
+    "husky": "^9.1.7"
+  }
+}
