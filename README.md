@@ -107,3 +107,28 @@ npm run dev   # http://localhost:5173 (사용 중이면 자동으로 다음 포�
 - [ ] k6 부하테스트 (동시성 검증)
 
 개발 과정은 Tistory 블로그 시리즈 "이커머스 핵심기능"에 기록하고 있습니다.
+
+## 커밋 컨벤션 & Pre-commit 훅 (Husky)
+
+레포 루트(`.git`이 있는 위치, `backend/`·`frontend/` 밖)에 Husky 기반 공통 레이어가 적용되어 있습니다. Python 설치가 필요한 `pre-commit` 프레임워크 대신, Node 기반이라 `npm install`만으로 훅이 자동 등록됩니다.
+
+```
+CommerceCore/
+├── .husky/
+│   ├── pre-commit          # 위생 검사 실행 (scripts/pre-commit-checks.js)
+│   └── commit-msg          # commitlint 실행
+├── commitlint.config.js     # feat/fix/refactor/docs/test/chore 타입 검증
+├── package.json             # devDependencies: husky, @commitlint/cli
+└── scripts/
+    └── pre-commit-checks.js # 줄 끝 공백 / 파일 끝 개행 / 병합 충돌 마커 / 대용량 파일 검사
+```
+
+- **커밋 메시지 검사** (`commit-msg`): `{type}: {제목}` 형식만 허용, 타입은 `feat/fix/refactor/docs/test/chore` 중 하나.
+- **위생 검사** (`pre-commit`): 스테이징된 파일의 줄 끝 공백, 파일 끝 개행 누락, 병합 충돌 마커(`<<<<<<<` 등), 1MB 초과 대용량 파일을 검사.
+- 최초 클론 후 루트에서 `npm install`을 실행하면 `prepare` 스크립트가 훅을 자동 활성화합니다 (`git config core.hooksPath` 별도 설정 불필요).
+
+### 문제 해결
+
+- `pre-commit script failed` → 위생 검사에서 걸린 파일을 확인 후 수정, 다시 `git add` 후 재커밋
+- `commit-msg script failed` → 커밋 메시지가 `feat/fix/refactor/docs/test/chore` 중 하나로 시작하는지 확인
+- Windows에서 훅 실행 권한 문제가 생기면 CMD/PowerShell 대신 Git Bash에서 커밋 진행
