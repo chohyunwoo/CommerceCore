@@ -68,3 +68,24 @@ export interface CreateOrderResult {
   status: string;
   totalAmount: number;
 }
+
+export interface OrderLookupItem {
+  productName: string;
+  size: string;
+  color: string;
+  quantity: number;
+  priceAtOrder: number;
+  lineTotal: number;
+}
+
+export interface OrderLookupResult {
+  orderNumber: string;
+  status: string;
+  buyerName: string;
+  buyerEmail: string;
+  buyerPhone: string;
+  buyerAddress: string;
+  totalAmount: number;
+  createdAt: string;
+  items: OrderLookupItem[];
+}
