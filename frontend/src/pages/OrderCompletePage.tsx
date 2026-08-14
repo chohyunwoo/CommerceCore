@@ -19,7 +19,10 @@ export function OrderCompletePage() {
       <h1>주문이 완료되었습니다.</h1>
       <p className="order-number">주문번호: {result.orderNumber}</p>
       <p>결제 금액: {result.totalAmount.toLocaleString()}원</p>
-      <Link to="/">상품 목록으로</Link>
+      <div className="order-complete-links">
+        <Link to="/">상품 목록으로</Link>
+        <Link to="/orders/lookup">주문 조회하기</Link>
+      </div>
     </section>
   );
 }

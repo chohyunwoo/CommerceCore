@@ -4,6 +4,7 @@ import { ProductDetailPage } from './pages/ProductDetailPage';
 import { CartPage } from './pages/CartPage';
 import { CheckoutPage } from './pages/CheckoutPage';
 import { OrderCompletePage } from './pages/OrderCompletePage';
+import { OrderLookupPage } from './pages/OrderLookupPage';
 import './App.css';
 
 function App() {
@@ -12,6 +13,7 @@ function App() {
       <header id="site-header">
         <Link to="/">CommerceCore</Link>
         <Link to="/cart">장바구니</Link>
+        <Link to="/orders/lookup">주문조회</Link>
       </header>
       <main id="content">
         <Routes>
@@ -20,6 +22,7 @@ function App() {
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/order-complete" element={<OrderCompletePage />} />
+          <Route path="/orders/lookup" element={<OrderLookupPage />} />
         </Routes>
       </main>
     </>

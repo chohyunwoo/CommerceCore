@@ -1,4 +1,9 @@
-import { ConflictException, Inject, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import type { Redis } from 'ioredis';
@@ -11,9 +16,11 @@ import { OrderStatus } from './entities/order-status.enum';
 import { generateOrderNumber } from './order-number.util';
 import { ValidateStockDto } from './dto/validate-stock.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { LookupOrderQueryDto } from './dto/lookup-order-query.dto';
 import {
   CreateOrderResponse,
   InsufficientStockItem,
+  OrderLookupResponse,
   ValidateStockResponse,
 } from './orders.types';
 
@@ -22,6 +29,8 @@ export class OrdersService {
   constructor(
     @InjectRepository(ProductOption)
     private readonly productOptionRepository: Repository<ProductOption>,
+    @InjectRepository(Order)
+    private readonly orderRepository: Repository<Order>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     @Inject(REDIS_CLIENT)
@@ -162,5 +171,40 @@ export class OrdersService {
     }
 
     throw new Error('주문번호 생성에 실패했습니다.');
+  }
+
+  async lookupOrder(
+    query: LookupOrderQueryDto,
+  ): Promise<OrderLookupResponse> {
+    const order = await this.orderRepository.findOne({
+      where: {
+        orderNumber: query.orderNumber,
+        buyerEmail: query.email,
+      },
+      relations: { items: { productOption: { product: true } } },
+    });
+
+    if (!order) {
+      throw new NotFoundException('주문 정보를 찾을 수 없습니다.');
+    }
+
+    return {
+      orderNumber: order.orderNumber,
+      status: order.status,
+      buyerName: order.buyerName,
+      buyerEmail: order.buyerEmail,
+      buyerPhone: order.buyerPhone,
+      buyerAddress: order.buyerAddress,
+      totalAmount: order.totalAmount,
+      createdAt: order.createdAt,
+      items: order.items.map((item) => ({
+        productName: item.productOption.product.name,
+        size: item.productOption.size,
+        color: item.productOption.color,
+        quantity: item.quantity,
+        priceAtOrder: item.priceAtOrder,
+        lineTotal: item.priceAtOrder * item.quantity,
+      })),
+    };
   }
 }

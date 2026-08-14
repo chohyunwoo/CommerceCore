@@ -1,6 +1,11 @@
-import { apiPost } from './client';
+import { apiGet, apiPost } from './client';
 import { getCartId } from '../lib/cartId';
-import type { CartItem, CreateOrderResult, ValidateStockResult } from './types';
+import type {
+  CartItem,
+  CreateOrderResult,
+  OrderLookupResult,
+  ValidateStockResult,
+} from './types';
 
 export function validateStock(items: CartItem[]): Promise<ValidateStockResult> {
   return apiPost<ValidateStockResult>('/orders/validate-stock', {
@@ -33,4 +38,12 @@ export function createOrder(
     },
     { 'X-Cart-Id': getCartId() },
   );
+}
+
+export function lookupOrder(
+  orderNumber: string,
+  email: string,
+): Promise<OrderLookupResult> {
+  const params = new URLSearchParams({ orderNumber, email });
+  return apiGet<OrderLookupResult>(`/orders/lookup?${params.toString()}`);
 }

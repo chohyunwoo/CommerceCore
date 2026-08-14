@@ -1,8 +1,9 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CartId } from '../common/decorators/cart-id.decorator';
 import { ValidateStockDto } from './dto/validate-stock.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { LookupOrderQueryDto } from './dto/lookup-order-query.dto';
 
 @Controller('orders')
 export class OrdersController {
@@ -17,5 +18,10 @@ export class OrdersController {
   @Post()
   createOrder(@CartId() cartId: string, @Body() dto: CreateOrderDto) {
     return this.ordersService.createOrder(cartId, dto);
+  }
+
+  @Get('lookup')
+  lookupOrder(@Query() query: LookupOrderQueryDto) {
+    return this.ordersService.lookupOrder(query);
   }
 }
