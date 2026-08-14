@@ -9,7 +9,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { CartService } from './cart.service';
-import { CartId } from './decorators/cart-id.decorator';
+import { CartId } from '../common/decorators/cart-id.decorator';
 import { AddCartItemDto } from './dto/add-cart-item.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
 

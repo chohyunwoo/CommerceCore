@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { fetchCart, removeCartItem, updateCartItem } from '../api/cart';
 import { validateStock } from '../api/orders';
 import { ApiError } from '../api/client';
 import type { Cart, ValidateStockResult } from '../api/types';
 
 export function CartPage() {
+  const navigate = useNavigate();
   const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -161,9 +162,15 @@ export function CartPage() {
       </div>
 
       {stockResult && stockResult.valid && (
-        <p className="stock-message stock-ok">
-          재고 확인 완료. 주문을 진행할 수 있습니다.
-        </p>
+        <div className="stock-message stock-ok">
+          <p>재고 확인 완료. 주문을 진행할 수 있습니다.</p>
+          <button
+            type="button"
+            onClick={() => navigate('/checkout', { state: { items: cart.items } })}
+          >
+            주문서 작성하기
+          </button>
+        </div>
       )}
 
       {stockResult && !stockResult.valid && (

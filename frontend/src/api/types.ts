@@ -62,3 +62,9 @@ export interface ValidateStockResult {
   valid: boolean;
   insufficientItems?: InsufficientStockItem[];
 }
+
+export interface CreateOrderResult {
+  orderNumber: string;
+  status: string;
+  totalAmount: number;
+}
