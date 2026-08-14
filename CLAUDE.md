@@ -174,12 +174,14 @@ CommerceCore/
 
 ### 장바구니 (Cart)
 
+Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TTL 14일. 재고 검증은 하지 않고 옵션 존재 여부만 확인(없으면 404). `POST`/`PATCH`/`DELETE` 모두 응답으로 **갱신된 장바구니 전체**(`GET /cart`와 동일한 형태)를 반환 — 프론트가 매번 재조회하지 않고 응답으로 상태를 갱신할 수 있게 하기 위함.
+
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/cart` | 현재 장바구니 조회 |
-| POST | `/cart/items` | 장바구니에 상품 추가 (Request: `{ productOptionId, quantity }`) |
-| PATCH | `/cart/items/:productOptionId` | 수량 변경 (Request: `{ quantity }`) |
-| DELETE | `/cart/items/:productOptionId` | 장바구니 항목 제거 |
+| GET | `/cart` | 현재 장바구니 조회. Response: `{ items: [{ productOptionId, productId, productName, size, color, unitPrice, quantity, stock, lineTotal }], totalAmount }` |
+| POST | `/cart/items` | 장바구니에 상품 추가 (Request: `{ productOptionId, quantity }`, 이미 있으면 수량 누적). 404: 존재하지 않는 productOptionId |
+| PATCH | `/cart/items/:productOptionId` | 수량 변경 (Request: `{ quantity }`, 1 이상). 404: 장바구니에 없는 항목 |
+| DELETE | `/cart/items/:productOptionId` | 장바구니 항목 제거. 404: 장바구니에 없는 항목 |
 
 ### 주문 (Orders)
 
@@ -304,7 +306,9 @@ CREATE TABLE order_items (
 7. ~~모듈 구조 및 재고 실시간 갱신 방식 결정~~ ✅
 8. ~~백엔드 환경 세팅 (NestJS, TypeORM, Docker Compose, 포트 충돌 해결)~~ ✅
 9. ~~테스트 데이터 입력 및 컨벤션 정리 (색상 한글 통일)~~ ✅
-10. 상품 조회 슬라이스 API 구현 완료 여부 확인 (Postman으로 `GET /products`, `GET /products/:id` 응답 검증) ← 다음 작업
-11. 프론트엔드(React) 연결 — 상품 목록/상세 화면
-12. 이후 슬라이스 순서대로 진행 (장바구니 → 재고확인 → 주문생성 → 주문조회)
-13. k6 부하테스트로 동시성 정확성 검증 및 기록
+10. ~~상품 조회 슬라이스 API 구현 완료 여부 확인 (Postman으로 `GET /products`, `GET /products/:id` 응답 검증)~~ ✅
+11. ~~프론트엔드(React) 연결 — 상품 목록/상세 화면~~ ✅
+12. ~~장바구니 슬라이스 구현 (Redis, `GET/POST/PATCH/DELETE /cart*`) — 프론트엔드 연결까지 완료~~ ✅
+13. 재고 확인 슬라이스 (`POST /orders/validate-stock`) ← 다음 작업
+14. 이후 슬라이스 순서대로 진행 (주문생성 → 주문조회)
+15. k6 부하테스트로 동시성 정확성 검증 및 기록
