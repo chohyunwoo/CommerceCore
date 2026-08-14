@@ -144,12 +144,15 @@ CommerceCore/
 
 - **비교한 대안**: 기능 화면만 구현 (대시보드 없음)
 - **선택 근거**: k6 부하테스트 동안 재고가 실시간으로 줄어드는 모습과 주문 상태 변화를 대시보드에서 직접 확인할 수 있어, 결정 13의 검증 목표(재고 초과 판매를 막는가)를 시각적으로 확인하고 스크린샷/화면 녹화로 기록하는 용도로 부합. (참고: 정확성 검증 자체는 k6 응답 로그만으로도 완료되므로, 대시보드는 검증의 필수 조건이 아니라 시각적 확인·기록을 위한 보조 도구임을 구분해서 인지)
+- **구현**: `GET /admin/stock-overview`(재고 현황), `GET /admin/orders/recent`(최근 주문) API + `/admin` 화면. k6로 동시 주문을 실행하는 동안 새로고침 없이 재고가 줄어들고 신규 주문이 목록에 뜨는 것을 실제로 확인함.
+- **주의(보안)**: 이 대시보드/API에는 별도 인증이 없음. 프로젝트 전체가 아직 로그인을 도입하지 않은 상태라 관리자 전용 접근 제어도 없이 구현됨 — `/admin`에 접속하면 누구나 재고와 구매자 정보(이름/합계 등)를 볼 수 있음. 실제 배포 전 반드시 재검토 필요.
 
 ### 15. 재고 실시간 갱신 방식 → Server-Sent Events (SSE)
 
 - **비교한 대안**: 폴링(Polling), WebSocket
 - **선택 근거**: 재고 파악이 목적이라 클라이언트가 서버로 별도 데이터를 보낼 필요가 없어 양방향 통신(WebSocket)은 불필요. 폴링은 갱신 주기보다 빠른 재고 변화를 놓칠 수 있어 "동시성 테스트 결과를 정확히 확인·기록한다"는 목표(결정 13, 14)에 부합하지 않음. SSE는 필요한 만큼(단방향 실시간)만 제공하면서 HTTP 기반이라 기존 REST API 인프라를 그대로 활용 가능.
-- **구현**: NestJS `@Sse()` 데코레이터로 `/admin/stock-stream` 스트림 제공. 재고 변경 시 서버가 이벤트 푸시.
+- **구현**: NestJS `@Sse()` 데코레이터로 `GET /admin/events` 스트림 제공. `stock-update`(재고 변경), `order-update`(신규 주문) 두 종류의 이벤트를 이름으로 구분해 하나의 연결로 푸시. 주문 생성 트랜잭션이 커밋된 뒤에만 발행되도록 해서, 롤백된 시도는 대시보드에 노출되지 않음. 현재는 주문 상태를 PENDING 이후로 전이시키는 API가 없어 "주문 상태 실시간 갱신"은 "신규 주문 발생 알림"으로 구현했고, 상태 전이 API가 생기면 같은 이벤트 채널(`common/events`의 `DomainEventsService`)을 재사용할 수 있게 설계함.
+- **재검토 트리거**: 로그인/관리자 인증 도입 시점 → `/admin/*` 전체에 접근 제어(인증 가드) 추가.
 
 ---
 
@@ -190,6 +193,14 @@ Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TT
 | POST | `/orders/validate-stock` | 주문 전 재고 확인. 응답: `{ valid: boolean, insufficientItems?: [...] }` (항상 200) |
 | POST | `/orders` | 실제 주문 생성. Request: `{ buyerEmail, buyerName, buyerPhone, buyerAddress, items: [{ productOptionId, quantity }] }`. Response 201: `{ orderNumber, status, totalAmount }`. 재검증 실패 시 409 |
 | GET | `/orders/lookup?orderNumber=&email=` | 주문번호+이메일 조합 조회. 불일치 시 404 |
+
+### 관리자 (Admin) — 인증 없음, 배포 전 재검토 필요
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/admin/stock-overview` | 전체 상품 옵션의 현재 재고 목록 |
+| GET | `/admin/orders/recent` | 최근 주문 목록 (최대 20건) |
+| GET | `/admin/events` | SSE. `stock-update`/`order-update` 이벤트를 이름으로 구분해 하나의 연결로 푸시 |
 
 ---
 
@@ -314,5 +325,5 @@ CREATE TABLE order_items (
 15. ~~주문 조회 슬라이스 (`GET /orders/lookup`)~~ ✅
 16. ~~k6 부하테스트로 동시성 정확성 검증 및 기록~~ ✅ (성공 1건/실패 9건, 최종 재고 0 확인)
 17. ~~블로그 -3편 작성 (구현+검증)~~ ✅ — https://gussdndlek12.tistory.com/20
-18. 관리자 대시보드(재고 현황, 주문 상태) + SSE 실시간 갱신 구현 (결정 14, 15) — 아직 미착수
-19. 배포 방향 재검토 및 실제 배포 (NCP VM + Docker Compose, 프론트엔드는 Cloudflare Pages)
+18. ~~관리자 대시보드(재고 현황, 주문 상태) + SSE 실시간 갱신 구현 (결정 14, 15)~~ ✅ — 인증 없음, 배포 전 재검토 필요
+19. 배포 방향 재검토 및 실제 배포 (NCP VM + Docker Compose, 프론트엔드는 Cloudflare Pages) ← 다음 작업
