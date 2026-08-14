@@ -106,6 +106,72 @@
 .stock-ok {
   background: var(--accent-bg);
   color: var(--accent);
+
+  button {
+    margin-top: 8px;
+    font: inherit;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--accent-border);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+  }
+}
+
+.checkout-summary {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+
+  li {
+    padding: 4px 0;
+  }
+}
+
+.checkout-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 400px;
+  margin-top: 24px;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 14px;
+  }
+
+  input {
+    font: inherit;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+  }
+
+  button {
+    font: inherit;
+    padding: 10px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--accent-bg);
+    color: var(--accent);
+    cursor: pointer;
+    margin-top: 8px;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.order-number {
+  font-weight: 500;
+  margin-top: 12px;
 }
 
 .stock-insufficient {
