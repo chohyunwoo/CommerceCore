@@ -262,3 +262,31 @@
   border: 1px solid var(--border);
   border-radius: 8px;
 }
+
+.sse-status {
+  display: inline-block;
+  margin: 8px 0 24px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  background: rgba(229, 72, 77, 0.1);
+  color: #e5484d;
+
+  &.connected {
+    background: var(--accent-bg);
+    color: var(--accent);
+  }
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 32px;
+
+  th,
+  td {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+}

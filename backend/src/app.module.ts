@@ -7,6 +7,8 @@ import { ProductsModule } from './products/products.module';
 import { RedisModule } from './redis/redis.module';
 import { CartModule } from './cart/cart.module';
 import { OrdersModule } from './orders/orders.module';
+import { EventsModule } from './common/events/events.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -27,9 +29,11 @@ import { OrdersModule } from './orders/orders.module';
       }),
     }),
     RedisModule,
+    EventsModule,
     ProductsModule,
     CartModule,
     OrdersModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],
