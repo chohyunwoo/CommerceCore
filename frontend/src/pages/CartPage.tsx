@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchCart, removeCartItem, updateCartItem } from '../api/cart';
+import { validateStock } from '../api/orders';
 import { ApiError } from '../api/client';
-import type { Cart } from '../api/types';
+import type { Cart, ValidateStockResult } from '../api/types';
 
 export function CartPage() {
   const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [checkingStock, setCheckingStock] = useState(false);
+  const [stockResult, setStockResult] = useState<ValidateStockResult | null>(
+    null,
+  );
 
   useEffect(() => {
     loadCart();
@@ -51,6 +56,24 @@ export function CartPage() {
           err instanceof ApiError ? err.message : '항목을 삭제하지 못했습니다.',
         );
       });
+  }
+
+  function handlePlaceOrder() {
+    if (!cart) {
+      return;
+    }
+
+    setCheckingStock(true);
+    setStockResult(null);
+
+    validateStock(cart.items)
+      .then(setStockResult)
+      .catch((err: unknown) => {
+        setError(
+          err instanceof ApiError ? err.message : '재고 확인에 실패했습니다.',
+        );
+      })
+      .finally(() => setCheckingStock(false));
   }
 
   if (loading) {
@@ -126,6 +149,36 @@ export function CartPage() {
       </table>
 
       <p className="cart-total">합계: {cart.totalAmount.toLocaleString()}원</p>
+
+      <div className="place-order">
+        <button
+          type="button"
+          disabled={checkingStock}
+          onClick={handlePlaceOrder}
+        >
+          {checkingStock ? '재고 확인 중...' : '주문하기'}
+        </button>
+      </div>
+
+      {stockResult && stockResult.valid && (
+        <p className="stock-message stock-ok">
+          재고 확인 완료. 주문을 진행할 수 있습니다.
+        </p>
+      )}
+
+      {stockResult && !stockResult.valid && (
+        <div className="stock-message stock-insufficient">
+          <p>재고가 부족한 상품이 있습니다.</p>
+          <ul>
+            {stockResult.insufficientItems?.map((item) => (
+              <li key={item.productOptionId}>
+                {item.productName} ({item.size} / {item.color}) — 요청{' '}
+                {item.requestedQuantity}개, 가능 {item.availableStock}개
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }

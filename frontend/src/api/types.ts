@@ -48,3 +48,17 @@ export interface Cart {
   items: CartItem[];
   totalAmount: number;
 }
+
+export interface InsufficientStockItem {
+  productOptionId: number;
+  productName: string;
+  size: string;
+  color: string;
+  requestedQuantity: number;
+  availableStock: number;
+}
+
+export interface ValidateStockResult {
+  valid: boolean;
+  insufficientItems?: InsufficientStockItem[];
+}
