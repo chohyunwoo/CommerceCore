@@ -309,6 +309,10 @@ CREATE TABLE order_items (
 10. ~~상품 조회 슬라이스 API 구현 완료 여부 확인 (Postman으로 `GET /products`, `GET /products/:id` 응답 검증)~~ ✅
 11. ~~프론트엔드(React) 연결 — 상품 목록/상세 화면~~ ✅
 12. ~~장바구니 슬라이스 구현 (Redis, `GET/POST/PATCH/DELETE /cart*`) — 프론트엔드 연결까지 완료~~ ✅
-13. 재고 확인 슬라이스 (`POST /orders/validate-stock`) ← 다음 작업
-14. 이후 슬라이스 순서대로 진행 (주문생성 → 주문조회)
-15. k6 부하테스트로 동시성 정확성 검증 및 기록
+13. ~~재고 확인 슬라이스 (`POST /orders/validate-stock`)~~ ✅
+14. ~~주문 생성 슬라이스 (`POST /orders`, 비관적 락 + 트랜잭션)~~ ✅
+15. ~~주문 조회 슬라이스 (`GET /orders/lookup`)~~ ✅
+16. ~~k6 부하테스트로 동시성 정확성 검증 및 기록~~ ✅ (성공 1건/실패 9건, 최종 재고 0 확인)
+17. ~~블로그 -3편 작성 (구현+검증)~~ ✅ — https://gussdndlek12.tistory.com/20
+18. 관리자 대시보드(재고 현황, 주문 상태) + SSE 실시간 갱신 구현 (결정 14, 15) — 아직 미착수
+19. 배포 방향 재검토 및 실제 배포 (NCP VM + Docker Compose, 프론트엔드는 Cloudflare Pages)
