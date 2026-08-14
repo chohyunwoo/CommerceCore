@@ -31,3 +31,20 @@ export interface ApiErrorBody {
   statusCode: number;
   message: string | string[];
 }
+
+export interface CartItem {
+  productOptionId: number;
+  productId: number;
+  productName: string;
+  size: string;
+  color: string;
+  unitPrice: number;
+  quantity: number;
+  stock: number;
+  lineTotal: number;
+}
+
+export interface Cart {
+  items: CartItem[];
+  totalAmount: number;
+}
