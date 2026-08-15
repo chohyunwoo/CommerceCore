@@ -27,6 +27,13 @@ export interface ProductDetail extends Product {
   options: ProductOption[];
 }
 
+export interface PaginatedProducts {
+  items: Product[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
 export interface ApiErrorBody {
   statusCode: number;
   message: string | string[];
