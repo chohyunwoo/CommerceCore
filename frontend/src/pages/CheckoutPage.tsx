@@ -22,10 +22,12 @@ export function CheckoutPage() {
 
   if (!state || state.items.length === 0) {
     return (
-      <section id="checkout">
-        <p>주문할 상품 정보가 없습니다.</p>
-        <Link to="/cart">장바구니로 돌아가기</Link>
-      </section>
+      <div className="form-page">
+        <p style={{ color: 'var(--text-sub)', marginBottom: '24px' }}>
+          주문할 상품 정보가 없습니다.
+        </p>
+        <Link to="/cart" className="btn">장바구니로 돌아가기</Link>
+      </div>
     );
   }
 
@@ -36,78 +38,77 @@ export function CheckoutPage() {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
-
     createOrder({ buyerEmail, buyerName, buyerPhone, buyerAddress }, items)
-      .then((result) => {
-        navigate('/order-complete', { state: result });
-      })
+      .then((result) => navigate('/order-complete', { state: result }))
       .catch((err: unknown) => {
         setError(
-          err instanceof ApiError
-            ? err.message
-            : '주문 생성에 실패했습니다.',
+          err instanceof ApiError ? err.message : '주문 생성에 실패했습니다.',
         );
       })
       .finally(() => setSubmitting(false));
   }
 
   return (
-    <section id="checkout">
-      <h1>주문서 작성</h1>
+    <div className="form-page">
+      <h1 className="page-title">주문서 작성</h1>
 
-      <ul className="checkout-summary">
+      <ul className="form-summary">
         {items.map((item) => (
           <li key={item.productOptionId}>
             {item.productName} ({item.size} / {item.color}) × {item.quantity}
           </li>
         ))}
       </ul>
-      <p className="cart-total">합계: {totalAmount.toLocaleString()}원</p>
+      <p className="form-total">{totalAmount.toLocaleString()}원</p>
 
       <form className="checkout-form" onSubmit={handleSubmit}>
-        <label>
-          이메일
+        <div className="form-group">
+          <label className="form-label">이메일</label>
           <input
+            className="form-input"
             type="email"
             required
             value={buyerEmail}
             onChange={(e) => setBuyerEmail(e.target.value)}
           />
-        </label>
-        <label>
-          이름
+        </div>
+        <div className="form-group">
+          <label className="form-label">이름</label>
           <input
+            className="form-input"
             type="text"
             required
             value={buyerName}
             onChange={(e) => setBuyerName(e.target.value)}
           />
-        </label>
-        <label>
-          전화번호
+        </div>
+        <div className="form-group">
+          <label className="form-label">전화번호</label>
           <input
+            className="form-input"
             type="text"
             required
             value={buyerPhone}
             onChange={(e) => setBuyerPhone(e.target.value)}
           />
-        </label>
-        <label>
-          배송지
+        </div>
+        <div className="form-group">
+          <label className="form-label">배송지</label>
           <input
+            className="form-input"
             type="text"
             required
             value={buyerAddress}
             onChange={(e) => setBuyerAddress(e.target.value)}
           />
-        </label>
+        </div>
 
-        {error && <p className="error">{error}</p>}
+        {error && <p className="error" style={{ marginBottom: '16px' }}>{error}</p>}
 
-        <button type="submit" disabled={submitting}>
+        <button type="submit" className="form-submit" disabled={submitting}>
           {submitting ? '주문 처리 중...' : '주문 완료'}
         </button>
       </form>
-    </section>
+    </div>
   );
 }

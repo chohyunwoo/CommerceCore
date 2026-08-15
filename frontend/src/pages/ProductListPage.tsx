@@ -4,11 +4,13 @@ import { fetchProducts } from '../api/products';
 import { ApiError } from '../api/client';
 import type { Product } from '../api/types';
 
+function getProductImage(productId: number): string {
+  return `https://picsum.photos/seed/cc-${productId}/600/750`;
+}
+
 export function ProductListPage() {
   const [categories, setCategories] = useState<string[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(
-    null,
-  );
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -18,9 +20,7 @@ export function ProductListPage() {
       .then((all) => {
         setCategories(Array.from(new Set(all.map((p) => p.category.name))));
       })
-      .catch(() => {
-        // 필터 목록은 부가 정보라 실패해도 목록 조회 자체는 계속 진행
-      });
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -36,15 +36,13 @@ export function ProductListPage() {
 
   return (
     <section id="product-list">
-      <h1>상품 목록</h1>
-
       <div className="category-filter">
         <button
           type="button"
           className={selectedCategory === null ? 'active' : ''}
           onClick={() => setSelectedCategory(null)}
         >
-          전체
+          All
         </button>
         {categories.map((name) => (
           <button
@@ -58,22 +56,28 @@ export function ProductListPage() {
         ))}
       </div>
 
-      {loading && <p>불러오는 중...</p>}
+      {loading && (
+        <p style={{ color: 'var(--text-sub)', fontSize: '13px' }}>불러오는 중...</p>
+      )}
       {error && <p className="error">{error}</p>}
-
       {!loading && !error && products.length === 0 && (
-        <p>등록된 상품이 없습니다.</p>
+        <p style={{ color: 'var(--text-sub)', fontSize: '13px' }}>등록된 상품이 없습니다.</p>
       )}
 
       <ul className="product-grid">
         {products.map((product) => (
           <li key={product.id} className="product-card">
             <Link to={`/products/${product.id}`}>
+              <div className="product-thumb">
+                <img
+                  src={getProductImage(product.id)}
+                  alt={product.name}
+                  loading="lazy"
+                />
+              </div>
               <p className="product-category">{product.category.name}</p>
-              <h2>{product.name}</h2>
-              <p className="product-price">
-                {product.basePrice.toLocaleString()}원
-              </p>
+              <p className="product-name">{product.name}</p>
+              <p className="product-price">{product.basePrice.toLocaleString()}원</p>
             </Link>
           </li>
         ))}

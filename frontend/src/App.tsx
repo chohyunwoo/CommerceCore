@@ -12,10 +12,15 @@ function App() {
   return (
     <>
       <header id="site-header">
-        <Link to="/">CommerceCore</Link>
-        <Link to="/cart">장바구니</Link>
-        <Link to="/orders/lookup">주문조회</Link>
-        <Link to="/admin">관리자</Link>
+        <nav className="header-left">
+          <Link to="/">Shop</Link>
+          <Link to="/orders/lookup">주문조회</Link>
+        </nav>
+        <Link to="/" className="header-logo">CommerceCore</Link>
+        <div className="header-right">
+          <Link to="/cart">장바구니</Link>
+          <Link to="/admin">관리자</Link>
+        </div>
       </header>
       <main id="content">
         <Routes>

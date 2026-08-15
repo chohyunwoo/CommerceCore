@@ -32,9 +32,7 @@ export function AdminDashboardPage() {
         const exists = prev.some(
           (item) => item.productOptionId === update.productOptionId,
         );
-        if (!exists) {
-          return [...prev, update];
-        }
+        if (!exists) return [...prev, update];
         return prev.map((item) =>
           item.productOptionId === update.productOptionId ? update : item,
         );
@@ -55,17 +53,24 @@ export function AdminDashboardPage() {
   }, []);
 
   if (loading) {
-    return <p>불러오는 중...</p>;
+    return (
+      <section id="admin-dashboard">
+        <p style={{ color: 'var(--text-sub)', fontSize: '13px' }}>불러오는 중...</p>
+      </section>
+    );
   }
 
   return (
     <section id="admin-dashboard">
-      <h1>관리자 대시보드</h1>
-      <p className={connected ? 'sse-status connected' : 'sse-status'}>
-        {connected ? '실시간 연동 중' : '실시간 연결 끊김'}
-      </p>
+      <div className="admin-header">
+        <h1 className="admin-title">Dashboard</h1>
+        <div className="sse-badge">
+          <span className={`sse-dot${connected ? ' live' : ''}`} />
+          {connected ? '실시간 연동 중' : '연결 끊김'}
+        </div>
+      </div>
 
-      <h2>재고 현황</h2>
+      <p className="admin-section-title">재고 현황</p>
       <table className="admin-table">
         <thead>
           <tr>
@@ -81,13 +86,15 @@ export function AdminDashboardPage() {
               <td>{item.productName}</td>
               <td>{item.size}</td>
               <td>{item.color}</td>
-              <td>{item.stock > 0 ? item.stock : '품절'}</td>
+              <td className={item.stock === 0 ? 'stock-zero' : ''}>
+                {item.stock > 0 ? item.stock : '품절'}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <h2>최근 주문</h2>
+      <p className="admin-section-title">최근 주문</p>
       <table className="admin-table">
         <thead>
           <tr>

@@ -8,20 +8,22 @@ export function OrderCompletePage() {
   if (!result) {
     return (
       <section id="order-complete">
-        <p>주문 정보를 찾을 수 없습니다.</p>
-        <Link to="/">상품 보러 가기</Link>
+        <p style={{ color: 'var(--text-sub)', marginBottom: '24px' }}>
+          주문 정보를 찾을 수 없습니다.
+        </p>
+        <Link to="/" className="btn">상품 보러 가기</Link>
       </section>
     );
   }
 
   return (
     <section id="order-complete">
-      <h1>주문이 완료되었습니다.</h1>
-      <p className="order-number">주문번호: {result.orderNumber}</p>
-      <p>결제 금액: {result.totalAmount.toLocaleString()}원</p>
-      <div className="order-complete-links">
-        <Link to="/">상품 목록으로</Link>
-        <Link to="/orders/lookup">주문 조회하기</Link>
+      <h1 className="complete-title">주문이 완료되었습니다.</h1>
+      <p className="complete-order-num">주문번호 {result.orderNumber}</p>
+      <p className="complete-amount">{result.totalAmount.toLocaleString()}원</p>
+      <div className="complete-links">
+        <Link to="/" className="btn">계속 쇼핑하기</Link>
+        <Link to="/orders/lookup" className="btn btn-filled">주문 조회하기</Link>
       </div>
     </section>
   );
