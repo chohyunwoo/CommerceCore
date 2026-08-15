@@ -773,3 +773,55 @@
   opacity: 0.3;
   cursor: default;
 }
+
+/* Order status badge */
+.order-status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  border-radius: 2px;
+}
+
+.status-pending  { background: #fef3c7; color: #92400e; }
+.status-paid     { background: #dbeafe; color: #1e40af; }
+.status-shipped  { background: #ede9fe; color: #5b21b6; }
+.status-delivered { background: #d1fae5; color: #065f46; }
+.status-cancelled { background: #fee2e2; color: #991b1b; }
+
+/* Order action buttons */
+.order-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.order-action-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.order-action-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.order-action-btn.primary {
+  background: var(--text-main);
+  color: var(--bg);
+}
+
+.order-action-btn.danger {
+  background: transparent;
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+.order-action-btn.danger:hover:not(:disabled) {
+  background: #dc2626;
+  color: #fff;
+}

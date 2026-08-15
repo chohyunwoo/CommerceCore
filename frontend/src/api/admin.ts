@@ -1,4 +1,4 @@
-import { apiGet } from './client';
+import { apiGet, apiPatch } from './client';
 import type { RecentOrderItem, StockOverviewItem } from './types';
 
 export function fetchStockOverview(): Promise<StockOverviewItem[]> {
@@ -7,4 +7,11 @@ export function fetchStockOverview(): Promise<StockOverviewItem[]> {
 
 export function fetchRecentOrders(): Promise<RecentOrderItem[]> {
   return apiGet<RecentOrderItem[]>('/admin/orders/recent');
+}
+
+export function updateOrderStatus(
+  orderNumber: string,
+  status: string,
+): Promise<RecentOrderItem> {
+  return apiPatch<RecentOrderItem>(`/admin/orders/${orderNumber}/status`, { status });
 }
