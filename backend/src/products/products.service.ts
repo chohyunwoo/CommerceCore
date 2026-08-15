@@ -3,6 +3,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product } from './entities/product.entity';
 
+export interface PaginatedProducts {
+  items: Product[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
 @Injectable()
 export class ProductsService {
   constructor(
@@ -10,12 +17,20 @@ export class ProductsService {
     private readonly productRepository: Repository<Product>,
   ) {}
 
-  async findAll(categoryName?: string): Promise<Product[]> {
-    return this.productRepository.find({
+  async findAll(
+    categoryName?: string,
+    page = 1,
+    limit = 12,
+  ): Promise<PaginatedProducts> {
+    const [items, total] = await this.productRepository.findAndCount({
       relations: { category: true },
       where: categoryName ? { category: { name: categoryName } } : undefined,
       order: { id: 'ASC' },
+      skip: (page - 1) * limit,
+      take: limit,
     });
+
+    return { items, total, page, totalPages: Math.ceil(total / limit) };
   }
 
   async findOne(id: number): Promise<Product> {

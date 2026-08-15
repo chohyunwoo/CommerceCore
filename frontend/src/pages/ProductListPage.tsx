@@ -4,35 +4,46 @@ import { fetchProducts } from '../api/products';
 import { ApiError } from '../api/client';
 import type { Product } from '../api/types';
 
+const CATEGORIES = ['신발', '상의', '하의'];
+const LIMIT = 12;
+
 function getProductImage(productId: number): string {
   return `https://picsum.photos/seed/cc-${productId}/600/750`;
 }
 
 export function ProductListPage() {
-  const [categories, setCategories] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchProducts()
-      .then((all) => {
-        setCategories(Array.from(new Set(all.map((p) => p.category.name))));
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
     setLoading(true);
     setError(null);
-    fetchProducts(selectedCategory ?? undefined)
-      .then(setProducts)
+    fetchProducts(selectedCategory ?? undefined, page, LIMIT)
+      .then(({ items, totalPages: tp }) => {
+        setProducts(items);
+        setTotalPages(tp);
+      })
       .catch((err: unknown) => {
         setError(err instanceof ApiError ? err.message : '상품을 불러오지 못했습니다.');
       })
       .finally(() => setLoading(false));
-  }, [selectedCategory]);
+  }, [selectedCategory, page]);
+
+  function handleCategoryChange(category: string | null) {
+    setSelectedCategory(category);
+    setPage(1);
+  }
+
+  function getPageNumbers(): number[] {
+    const delta = 2;
+    const start = Math.max(1, page - delta);
+    const end = Math.min(totalPages, page + delta);
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  }
 
   return (
     <section id="product-list">
@@ -40,16 +51,16 @@ export function ProductListPage() {
         <button
           type="button"
           className={selectedCategory === null ? 'active' : ''}
-          onClick={() => setSelectedCategory(null)}
+          onClick={() => handleCategoryChange(null)}
         >
           All
         </button>
-        {categories.map((name) => (
+        {CATEGORIES.map((name) => (
           <button
             key={name}
             type="button"
             className={selectedCategory === name ? 'active' : ''}
-            onClick={() => setSelectedCategory(name)}
+            onClick={() => handleCategoryChange(name)}
           >
             {name}
           </button>
@@ -82,6 +93,39 @@ export function ProductListPage() {
           </li>
         ))}
       </ul>
+
+      {!loading && !error && totalPages > 1 && (
+        <div className="pagination">
+          <button
+            type="button"
+            className="pagination-btn"
+            onClick={() => setPage((p) => p - 1)}
+            disabled={page === 1}
+          >
+            이전
+          </button>
+
+          {getPageNumbers().map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={`pagination-btn${p === page ? ' active' : ''}`}
+              onClick={() => setPage(p)}
+            >
+              {p}
+            </button>
+          ))}
+
+          <button
+            type="button"
+            className="pagination-btn"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={page === totalPages}
+          >
+            다음
+          </button>
+        </div>
+      )}
     </section>
   );
 }
