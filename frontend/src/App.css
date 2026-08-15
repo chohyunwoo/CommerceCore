@@ -752,19 +752,19 @@
   padding: 0 10px;
   border: 1px solid var(--border);
   background: var(--bg);
-  color: var(--text-main);
+  color: var(--text);
   font-size: 13px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
 .pagination-btn:hover:not(:disabled) {
-  background: var(--text-main);
+  background: var(--text);
   color: var(--bg);
 }
 
 .pagination-btn.active {
-  background: var(--text-main);
+  background: var(--text);
   color: var(--bg);
   font-weight: 600;
 }
@@ -811,7 +811,7 @@
 }
 
 .order-action-btn.primary {
-  background: var(--text-main);
+  background: var(--text);
   color: var(--bg);
 }
 
@@ -865,19 +865,19 @@
   padding: 10px 12px;
   border: 1px solid var(--border);
   background: var(--bg);
-  color: var(--text-main);
+  color: var(--text);
   font-size: 14px;
   box-sizing: border-box;
 }
 
 .admin-login-input:focus {
   outline: none;
-  border-color: var(--text-main);
+  border-color: var(--text);
 }
 
 .admin-login-btn {
   padding: 10px;
-  background: var(--text-main);
+  background: var(--text);
   color: var(--bg);
   font-size: 13px;
   font-weight: 600;

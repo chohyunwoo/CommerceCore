@@ -21,5 +21,5 @@ export function updateOrderStatus(
   orderNumber: string,
   status: string,
 ): Promise<RecentOrderItem> {
-  return apiPatch<RecentOrderItem>(`/admin/orders/${orderNumber}/status`, { status });
+  return apiPatch<RecentOrderItem>(`/admin/orders/${orderNumber}/status`, { status }, adminHeaders());
 }
