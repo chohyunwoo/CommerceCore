@@ -5,7 +5,7 @@ import { CartPage } from './pages/CartPage';
 import { CheckoutPage } from './pages/CheckoutPage';
 import { OrderCompletePage } from './pages/OrderCompletePage';
 import { OrderLookupPage } from './pages/OrderLookupPage';
-import { AdminDashboardPage } from './pages/AdminDashboardPage';
+import { AdminPage } from './pages/AdminPage';
 import './App.css';
 
 function App() {
@@ -30,7 +30,7 @@ function App() {
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/order-complete" element={<OrderCompletePage />} />
           <Route path="/orders/lookup" element={<OrderLookupPage />} />
-          <Route path="/admin" element={<AdminDashboardPage />} />
+          <Route path="/admin" element={<AdminPage />} />
         </Routes>
       </main>
     </>

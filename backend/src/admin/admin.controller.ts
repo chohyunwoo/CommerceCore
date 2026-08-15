@@ -1,9 +1,11 @@
-import { Body, Controller, Get, MessageEvent, Param, Patch, Sse } from '@nestjs/common';
+import { Body, Controller, Get, MessageEvent, Param, Patch, Sse, UseGuards } from '@nestjs/common';
 import { map, Observable } from 'rxjs';
 import { AdminService } from './admin.service';
 import { DomainEventsService } from '../common/events/domain-events.service';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import { AdminGuard } from '../common/guards/admin.guard';
 
+@UseGuards(AdminGuard)
 @Controller('admin')
 export class AdminController {
   constructor(
