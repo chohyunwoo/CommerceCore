@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { API_BASE_URL } from '../api/client';
+import { API_BASE_URL, ApiError } from '../api/client';
 import { fetchRecentOrders, fetchStockOverview, updateOrderStatus } from '../api/admin';
 import type { RecentOrderItem, StockOverviewItem } from '../api/types';
 
@@ -35,7 +35,12 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
   CANCELLED: '취소됨',
 };
 
-export function AdminDashboardPage() {
+interface Props {
+  token: string;
+  onAuthError: () => void;
+}
+
+export function AdminDashboardPage({ token, onAuthError }: Props) {
   const [stock, setStock] = useState<StockOverviewItem[]>([]);
   const [orders, setOrders] = useState<RecentOrderItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,11 +53,18 @@ export function AdminDashboardPage() {
         setStock(stockOverview);
         setOrders(recentOrders);
       })
+      .catch((err: unknown) => {
+        if (err instanceof ApiError && err.statusCode === 401) {
+          onAuthError();
+        }
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [onAuthError]);
 
   useEffect(() => {
-    const source = new EventSource(`${API_BASE_URL}/admin/events`);
+    const source = new EventSource(
+      `${API_BASE_URL}/admin/events?token=${encodeURIComponent(token)}`,
+    );
 
     source.onopen = () => setConnected(true);
     source.onerror = () => setConnected(false);
@@ -81,7 +93,7 @@ export function AdminDashboardPage() {
     });
 
     return () => source.close();
-  }, []);
+  }, [token]);
 
   async function handleStatusChange(orderNumber: string, status: OrderStatus) {
     setUpdating(orderNumber);
