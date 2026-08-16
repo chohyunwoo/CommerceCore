@@ -3,7 +3,6 @@ import { ProductListPage } from './pages/ProductListPage';
 import { ProductDetailPage } from './pages/ProductDetailPage';
 import { CartPage } from './pages/CartPage';
 import { CheckoutPage } from './pages/CheckoutPage';
-import { OrderCompletePage } from './pages/OrderCompletePage';
 import { OrderLookupPage } from './pages/OrderLookupPage';
 import { AdminPage } from './pages/AdminPage';
 import { PaymentSuccessPage } from './pages/PaymentSuccessPage';
@@ -30,7 +29,6 @@ function App() {
           <Route path="/products/:id" element={<ProductDetailPage />} />
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
-          <Route path="/order-complete" element={<OrderCompletePage />} />
           <Route path="/orders/lookup" element={<OrderLookupPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/payment/success" element={<PaymentSuccessPage />} />

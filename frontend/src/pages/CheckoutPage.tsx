@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import { loadTossPayments, ANONYMOUS } from '@tosspayments/tosspayments-sdk';
 import { createOrder } from '../api/orders';
 import { ApiError } from '../api/client';
 import type { CartItem } from '../api/types';
@@ -8,9 +9,10 @@ interface CheckoutLocationState {
   items: CartItem[];
 }
 
+const TOSS_CLIENT_KEY = import.meta.env.VITE_TOSSPAYMENTS_CLIENT_KEY as string;
+
 export function CheckoutPage() {
   const location = useLocation();
-  const navigate = useNavigate();
   const state = location.state as CheckoutLocationState | null;
 
   const [buyerEmail, setBuyerEmail] = useState('');
@@ -34,22 +36,39 @@ export function CheckoutPage() {
   const { items } = state;
   const totalAmount = items.reduce((sum, item) => sum + item.lineTotal, 0);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
-    createOrder({ buyerEmail, buyerName, buyerPhone, buyerAddress }, items)
-      .then((result) =>
-        navigate('/order-complete', {
-          state: { ...result, buyerName, buyerEmail },
-        }),
-      )
-      .catch((err: unknown) => {
-        setError(
-          err instanceof ApiError ? err.message : '주문 생성에 실패했습니다.',
-        );
-      })
-      .finally(() => setSubmitting(false));
+
+    try {
+      const result = await createOrder(
+        { buyerEmail, buyerName, buyerPhone, buyerAddress },
+        items,
+      );
+
+      const tossPayments = await loadTossPayments(TOSS_CLIENT_KEY);
+      const payment = tossPayments.payment({ customerKey: ANONYMOUS });
+      await payment.requestPayment({
+        method: 'CARD',
+        amount: { currency: 'KRW', value: result.totalAmount },
+        orderId: result.orderNumber,
+        orderName: 'CommerceCore 주문',
+        successUrl: `${window.location.origin}/payment/success`,
+        failUrl: `${window.location.origin}/payment/fail`,
+        customerName: buyerName,
+        customerEmail: buyerEmail,
+      });
+    } catch (err: unknown) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : '처리 중 오류가 발생했습니다.',
+      );
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -110,7 +129,7 @@ export function CheckoutPage() {
         {error && <p className="error" style={{ marginBottom: '16px' }}>{error}</p>}
 
         <button type="submit" className="form-submit" disabled={submitting}>
-          {submitting ? '주문 처리 중...' : '주문 완료'}
+          {submitting ? '결제창 열기 중...' : '주문하기'}
         </button>
       </form>
     </div>
