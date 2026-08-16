@@ -15,10 +15,22 @@
 ## 기술 스택
 
 - Backend: NestJS + PostgreSQL
-- Cache/세션: Redis
-- 메시징: Kafka (결제 파이프라인 전용)
+- Cache/세션: Redis (ioredis)
 - Frontend: React (Vite)
+- 실시간: Server-Sent Events (SSE, RxJS Subject)
 - 부하테스트: k6
+
+## 배포 환경 (2026-08-16 완료)
+
+| 영역 | 서비스 |
+|---|---|
+| 프론트엔드 | Cloudflare Pages — https://commercecore.pages.dev |
+| 백엔드 | Render (무료 티어, Docker 기반) — https://commerce-core-backend.onrender.com |
+| DB | Supabase PostgreSQL (Singapore 리전, IPv6 이슈로 Pooler URL 사용) |
+| Redis | Upstash (TLS, `rediss://` URL) |
+
+- Render 무료 티어: 15분 비활성 후 슬립 → 첫 요청 응답 30초 내외 소요
+- 환경변수 템플릿: `.env.prod.example` 참고
 
 ## 폴더 구조
 
@@ -32,17 +44,18 @@ CommerceCore/
 
 ## 로컬 개발 환경 → Docker Compose
 
-- **비교한 대안**: PostgreSQL/Redis/Kafka 직접 설치
-- **선택 근거**: Kafka는 직접 설치 시 Zookeeper/KRaft 설정과 Java 런타임 호환성까지 신경 써야 해 번거로움. Docker Compose는 `docker-compose up` 한 줄로 재현 가능한 환경을 구성할 수 있고, 기존 Kubernetes 경험을 가볍게 재사용 가능. 컨테이너 삭제/재설치도 깔끔함.
-- **구성**: `docker-compose.yml` (postgres, redis, kafka — Kafka는 KRaft 모드, Apache 공식 이미지 `apache/kafka:3.7.0` 사용)
+- **비교한 대안**: PostgreSQL/Redis 직접 설치
+- **선택 근거**: Docker Compose는 `docker-compose up` 한 줄로 재현 가능한 환경을 구성할 수 있고, 기존 Kubernetes 경험을 가볍게 재사용 가능. 컨테이너 삭제/재설치도 깔끔함.
+- **구성**: `docker-compose.yml` (postgres, redis)
 - **포트**: 로컬에 기존 PostgreSQL이 5432를 점유해 컨테이너는 `5433:5432`로 매핑. pgAdmin 및 백엔드 `.env`의 `DB_PORT`는 5433 사용.
 - **직접 설치가 필요한 것**: Node.js (Docker 여부와 무관하게 NestJS/React 실행에 필요)
 
-## 배포 방향 (잠정, 구현 완료 후 재검토)
+## 배포 방향
 
-- **백엔드**: NCP VM + Docker Compose를 1차 배포로 우선 고려. 로컬 Compose 파일을 거의 그대로 재사용 가능해 학습 비용이 적고, 결정 13(k6 부하테스트 신뢰성 확보)의 목표를 이 정도 인프라로 충분히 달성 가능. 트래픽 증가를 시뮬레이션하고 싶어지는 시점에 NCP Kubernetes로 전환 검토 (이때 결정 2의 재검토 트리거인 "다중 인스턴스 환경"도 함께 발동).
-- **프론트엔드**: Cloudflare Pages (기존 배포 경험 재사용, 정적 파일 + CDN).
-- **재검토 시점**: 백엔드/프론트엔드 구현이 끝난 뒤 실제 배포 시점에 다시 논의.
+NCP VM 대신 무료 배포 조합(Render + Supabase + Upstash + Cloudflare Pages)으로 최종 결정. 포트폴리오 목적에 맞게 인프라 비용 없이 실제 운영 환경을 구성함.
+
+- **트러블슈팅 기록**: Supabase 직접 연결 URL은 Render Singapore → Supabase IPv6 주소로 라우팅되어 `ENETUNREACH` 에러 발생 → Pooler URL(`aws-0-ap-southeast-1.pooler.supabase.com:5432`)로 교체해 해결.
+- **재검토 트리거**: 트래픽 증가 시뮬레이션이 필요해지는 시점 → NCP VM + Docker Compose 또는 NCP Kubernetes 전환 검토.
 
 ## 개발 원칙
 
@@ -145,14 +158,14 @@ CommerceCore/
 - **비교한 대안**: 기능 화면만 구현 (대시보드 없음)
 - **선택 근거**: k6 부하테스트 동안 재고가 실시간으로 줄어드는 모습과 주문 상태 변화를 대시보드에서 직접 확인할 수 있어, 결정 13의 검증 목표(재고 초과 판매를 막는가)를 시각적으로 확인하고 스크린샷/화면 녹화로 기록하는 용도로 부합. (참고: 정확성 검증 자체는 k6 응답 로그만으로도 완료되므로, 대시보드는 검증의 필수 조건이 아니라 시각적 확인·기록을 위한 보조 도구임을 구분해서 인지)
 - **구현**: `GET /admin/stock-overview`(재고 현황), `GET /admin/orders/recent`(최근 주문) API + `/admin` 화면. k6로 동시 주문을 실행하는 동안 새로고침 없이 재고가 줄어들고 신규 주문이 목록에 뜨는 것을 실제로 확인함.
-- **주의(보안)**: 이 대시보드/API에는 별도 인증이 없음. 프로젝트 전체가 아직 로그인을 도입하지 않은 상태라 관리자 전용 접근 제어도 없이 구현됨 — `/admin`에 접속하면 누구나 재고와 구매자 정보(이름/합계 등)를 볼 수 있음. 실제 배포 전 반드시 재검토 필요.
+- **인증**: 배포 전 `X-Admin-Token` 헤더 기반 `AdminGuard` 추가 완료 (결정 16 참고). SSE 엔드포인트는 `EventSource`가 커스텀 헤더 미지원으로 `?token=` 쿼리 파라미터 방식 병행.
 
 ### 15. 재고 실시간 갱신 방식 → Server-Sent Events (SSE)
 
 - **비교한 대안**: 폴링(Polling), WebSocket
 - **선택 근거**: 재고 파악이 목적이라 클라이언트가 서버로 별도 데이터를 보낼 필요가 없어 양방향 통신(WebSocket)은 불필요. 폴링은 갱신 주기보다 빠른 재고 변화를 놓칠 수 있어 "동시성 테스트 결과를 정확히 확인·기록한다"는 목표(결정 13, 14)에 부합하지 않음. SSE는 필요한 만큼(단방향 실시간)만 제공하면서 HTTP 기반이라 기존 REST API 인프라를 그대로 활용 가능.
-- **구현**: NestJS `@Sse()` 데코레이터로 `GET /admin/events` 스트림 제공. `stock-update`(재고 변경), `order-update`(신규 주문) 두 종류의 이벤트를 이름으로 구분해 하나의 연결로 푸시. 주문 생성 트랜잭션이 커밋된 뒤에만 발행되도록 해서, 롤백된 시도는 대시보드에 노출되지 않음. 현재는 주문 상태를 PENDING 이후로 전이시키는 API가 없어 "주문 상태 실시간 갱신"은 "신규 주문 발생 알림"으로 구현했고, 상태 전이 API가 생기면 같은 이벤트 채널(`common/events`의 `DomainEventsService`)을 재사용할 수 있게 설계함.
-- **재검토 트리거**: 로그인/관리자 인증 도입 시점 → `/admin/*` 전체에 접근 제어(인증 가드) 추가.
+- **구현**: NestJS `@Sse()` 데코레이터로 `GET /admin/events` 스트림 제공. `stock-update`(재고 변경), `order-update`(신규 주문 및 상태 변경) 두 종류의 이벤트를 이름으로 구분해 하나의 연결로 푸시. 주문 생성 트랜잭션이 커밋된 뒤에만 발행되도록 해서, 롤백된 시도는 대시보드에 노출되지 않음. 주문 상태 전이 API(`PATCH /admin/orders/:id/status`) 구현 후 같은 이벤트 채널(`common/events`의 `DomainEventsService`)을 재사용해 상태 변경도 실시간 반영함.
+- **재검토 트리거**: 로그인 기능 도입 시점 → 사용자별 접근 제어로 확장.
 
 ---
 
@@ -194,12 +207,13 @@ Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TT
 | POST | `/orders` | 실제 주문 생성. Request: `{ buyerEmail, buyerName, buyerPhone, buyerAddress, items: [{ productOptionId, quantity }] }`. Response 201: `{ orderNumber, status, totalAmount }`. 재검증 실패 시 409 |
 | GET | `/orders/lookup?orderNumber=&email=` | 주문번호+이메일 조합 조회. 불일치 시 404 |
 
-### 관리자 (Admin) — 인증 없음, 배포 전 재검토 필요
+### 관리자 (Admin) — `X-Admin-Token` 헤더 인증 필요 (SSE는 `?token=` 쿼리 파라미터)
 
 | Method | Path | 설명 |
 |---|---|---|
 | GET | `/admin/stock-overview` | 전체 상품 옵션의 현재 재고 목록 |
 | GET | `/admin/orders/recent` | 최근 주문 목록 (최대 20건) |
+| PATCH | `/admin/orders/:id/status` | 주문 상태 전이. body: `{ status }`. 유효하지 않은 전이 시 400 |
 | GET | `/admin/events` | SSE. `stock-update`/`order-update` 이벤트를 이름으로 구분해 하나의 연결로 푸시 |
 
 ---
@@ -273,7 +287,7 @@ CREATE TABLE order_items (
 - `@nestjs/typeorm`, `typeorm`, `pg`, `@nestjs/config` 설치, `.env`로 DB 접속 정보 관리, `synchronize: false` (스키마는 SQL DDL로 직접 관리)
 - **포트 충돌 이슈**: 로컬에 Grafana가 3000번 포트를 사용 중이라 NestJS 기본 포트와 충돌(`EADDRINUSE`). `.env`에 `PORT=3001` 추가, `main.ts`에서 `process.env.PORT ?? 3001`로 설정해 해결. 이후 모든 API 호출은 `http://localhost:3001` 기준.
 - PostgreSQL 컨테이너 포트도 로컬 PostgreSQL과 충돌해 `5433:5432`로 매핑 (pgAdmin 접속 시 Port 5433 사용)
-- Kafka는 `bitnami/kafka` 무료 이미지가 유료 전환되어 `apache/kafka:3.7.0` (Apache 공식 이미지)으로 교체
+- 실시간 이벤트는 Kafka 없이 RxJS Subject(`DomainEventsService`)로 구현 — 단일 인스턴스 환경에서 SSE 스트림에 충분함
 
 ### 22. 색상(color) 값 표기 → 한글로 통일
 
@@ -300,9 +314,9 @@ CREATE TABLE order_items (
 
 - **-1편** (핵심 기능 결정 4가지): 게시 완료 — https://gussdndlek12.tistory.com/9
 - **-2편** (ERD~API 명세, 설계 구체화 과정에서 드러난 것들): 게시 완료 — https://gussdndlek12.tistory.com/10
-- **-3편 트리거**: 지금 진행 중인 주문관리+상품카탈로그/장바구니의 구현이 끝나고 실제 동작 검증(k6 포함)까지 마친 시점에 작성.
-- **이후 규칙**: 앞으로 추가할 기능(아직 무엇인지 정해지지 않음)도 동일하게, "구현 + 검증까지 끝난 시점에 한 편"으로 작성. 결정 단계·구체화 단계마다 나눠 쓰지 않고 기능 단위로 압축해 편수가 과도하게 늘어나는 것을 방지.
-- **패턴**: 설계 결정 → 구체화(ERD/API) → 구현+검증, 이번 기능(주문관리+카탈로그)까지는 이 세 단계를 나눠 썼으나 이후 기능부터는 구현+검증 완료 시점 1편으로 통일
+- **-3편** (구현+검증): 게시 완료 — https://gussdndlek12.tistory.com/20
+- **이후 규칙**: 앞으로 추가할 기능도 동일하게 "구현 + 검증까지 끝난 시점에 한 편"으로 작성. 결정 단계·구체화 단계마다 나눠 쓰지 않고 기능 단위로 압축.
+- **다음 편 트리거**: 결제 연동(TossPayments) 또는 Ledger 구현+검증 완료 시점
 
 ---
 
@@ -325,5 +339,7 @@ CREATE TABLE order_items (
 15. ~~주문 조회 슬라이스 (`GET /orders/lookup`)~~ ✅
 16. ~~k6 부하테스트로 동시성 정확성 검증 및 기록~~ ✅ (성공 1건/실패 9건, 최종 재고 0 확인)
 17. ~~블로그 -3편 작성 (구현+검증)~~ ✅ — https://gussdndlek12.tistory.com/20
-18. ~~관리자 대시보드(재고 현황, 주문 상태) + SSE 실시간 갱신 구현 (결정 14, 15)~~ ✅ — 인증 없음, 배포 전 재검토 필요
-19. 배포 방향 재검토 및 실제 배포 (NCP VM + Docker Compose, 프론트엔드는 Cloudflare Pages) ← 다음 작업
+18. ~~관리자 대시보드(재고 현황, 주문 상태) + SSE 실시간 갱신 구현 (결정 14, 15)~~ ✅
+19. ~~관리자 인증 (`X-Admin-Token` Guard, SSE는 `?token=` 쿼리 파라미터)~~ ✅
+20. ~~배포 완료 (Render + Supabase + Upstash + Cloudflare Pages)~~ ✅ — 2026-08-16
+21. 다음 기능 검토 중 — 결제 연동(TossPayments), Double-entry Ledger, 멀티 PG Orchestration
