@@ -9,6 +9,7 @@ import { CartModule } from './cart/cart.module';
 import { OrdersModule } from './orders/orders.module';
 import { EventsModule } from './common/events/events.module';
 import { AdminModule } from './admin/admin.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { AdminModule } from './admin/admin.module';
     CartModule,
     OrdersModule,
     AdminModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
