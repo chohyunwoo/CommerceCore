@@ -42,6 +42,12 @@
 - 주문 전 재고 사전 확인 API 분리 (`POST /orders/validate-stock`)
 - 주문번호 + 이메일 조합으로 게스트 주문 조회
 
+### 결제 (TossPayments)
+- 주문서 작성 → 주문 생성 → 즉시 TossPayments 카드 결제창 호출
+- 결제 성공 시 `/payment/success`로 리다이렉트, 백엔드 승인 API 호출 후 주문 상태 PAID 전이
+- 결제 실패/취소 시 `/payment/fail`로 이다이렉트, 주문 상태 PENDING 유지
+- 금액 위변조 방지: DB `total_amount` vs 요청 `amount` 서버 사전 검증
+
 ### 관리자 대시보드
 - 전체 재고 현황 / 최근 주문 목록 조회
 - 주문 상태 전이 (PENDING → PAID → SHIPPED → DELIVERED / CANCELLED)
@@ -89,6 +95,15 @@ PORT=3001
 ADMIN_TOKEN=your_admin_token
 
 CORS_ORIGIN=http://localhost:5173
+
+# TossPayments — 개발자센터 > 내 상점 > API 개별 연동 키
+TOSSPAYMENTS_SECRET_KEY=test_sk_...
+```
+
+프론트엔드는 루트에 `.env.local` 생성:
+
+```env
+VITE_TOSSPAYMENTS_CLIENT_KEY=test_ck_...
 ```
 
 > PostgreSQL 컨테이너는 로컬 충돌 방지를 위해 `5433:5432`로 매핑합니다.
@@ -131,6 +146,12 @@ psql -h localhost -p 5433 -U postgres -d postgres -f commerce-core-schema.sql
 | POST | `/orders/validate-stock` | 주문 전 재고 확인 (항상 200) |
 | POST | `/orders` | 주문 생성 (비관적 락 + 트랜잭션) |
 | GET | `/orders/lookup?orderNumber=&email=` | 주문번호+이메일 조합 조회 |
+
+### 결제
+
+| Method | Path | 설명 |
+|---|---|---|
+| POST | `/payments/confirm` | TossPayments 승인. `{ paymentKey, orderId, amount }` → 금액 검증 후 승인 API 호출 → 주문 PAID |
 
 ### 관리자 (인증 필요: `X-Admin-Token` 헤더)
 
