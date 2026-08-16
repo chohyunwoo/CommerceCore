@@ -207,6 +207,12 @@ Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TT
 | POST | `/orders` | 실제 주문 생성. Request: `{ buyerEmail, buyerName, buyerPhone, buyerAddress, items: [{ productOptionId, quantity }] }`. Response 201: `{ orderNumber, status, totalAmount }`. 재검증 실패 시 409 |
 | GET | `/orders/lookup?orderNumber=&email=` | 주문번호+이메일 조합 조회. 불일치 시 404 |
 
+### 결제 (Payments)
+
+| Method | Path | 설명 |
+|---|---|---|
+| POST | `/payments/confirm` | TossPayments 결제 승인. Request: `{ paymentKey, orderId, amount }`. 금액 검증 후 TossPayments 서버 승인 API 호출 → 주문 상태 PENDING → PAID. 금액 불일치 시 400 |
+
 ### 관리자 (Admin) — `X-Admin-Token` 헤더 인증 필요 (SSE는 `?token=` 쿼리 파라미터)
 
 | Method | Path | 설명 |
@@ -316,7 +322,7 @@ CREATE TABLE order_items (
 - **-2편** (ERD~API 명세, 설계 구체화 과정에서 드러난 것들): 게시 완료 — https://gussdndlek12.tistory.com/10
 - **-3편** (구현+검증): 게시 완료 — https://gussdndlek12.tistory.com/20
 - **이후 규칙**: 앞으로 추가할 기능도 동일하게 "구현 + 검증까지 끝난 시점에 한 편"으로 작성. 결정 단계·구체화 단계마다 나눠 쓰지 않고 기능 단위로 압축.
-- **다음 편 트리거**: 결제 연동(TossPayments) 또는 Ledger 구현+검증 완료 시점
+- **다음 편 트리거**: Ledger 또는 멀티 PG Orchestration 구현+검증 완료 시점
 
 ---
 
@@ -342,4 +348,5 @@ CREATE TABLE order_items (
 18. ~~관리자 대시보드(재고 현황, 주문 상태) + SSE 실시간 갱신 구현 (결정 14, 15)~~ ✅
 19. ~~관리자 인증 (`X-Admin-Token` Guard, SSE는 `?token=` 쿼리 파라미터)~~ ✅
 20. ~~배포 완료 (Render + Supabase + Upstash + Cloudflare Pages)~~ ✅ — 2026-08-16
-21. 다음 기능 검토 중 — 결제 연동(TossPayments), Double-entry Ledger, 멀티 PG Orchestration
+21. ~~TossPayments 단일 PG 결제 연동 (POST /payments/confirm, 결제창 흐름 구현)~~ ✅ — 2026-08-16
+22. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
