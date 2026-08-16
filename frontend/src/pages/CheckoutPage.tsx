@@ -39,7 +39,11 @@ export function CheckoutPage() {
     setSubmitting(true);
     setError(null);
     createOrder({ buyerEmail, buyerName, buyerPhone, buyerAddress }, items)
-      .then((result) => navigate('/order-complete', { state: result }))
+      .then((result) =>
+        navigate('/order-complete', {
+          state: { ...result, buyerName, buyerEmail },
+        }),
+      )
       .catch((err: unknown) => {
         setError(
           err instanceof ApiError ? err.message : '주문 생성에 실패했습니다.',

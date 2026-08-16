@@ -2,6 +2,7 @@ import { apiGet, apiPost } from './client';
 import { getCartId } from '../lib/cartId';
 import type {
   CartItem,
+  ConfirmPaymentResult,
   CreateOrderResult,
   OrderLookupResult,
   ValidateStockResult,
@@ -38,6 +39,18 @@ export function createOrder(
     },
     { 'X-Cart-Id': getCartId() },
   );
+}
+
+export function confirmPayment(
+  paymentKey: string,
+  orderId: string,
+  amount: number,
+): Promise<ConfirmPaymentResult> {
+  return apiPost<ConfirmPaymentResult>('/payments/confirm', {
+    paymentKey,
+    orderId,
+    amount,
+  });
 }
 
 export function lookupOrder(
