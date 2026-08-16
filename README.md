@@ -1,134 +1,205 @@
-# Commerce Core
+# CommerceCore
 
-프로덕션 품질을 지향하는 이커머스 포트폴리오 프로젝트입니다. 기술 면접에서 방어 가능한 수준의 아키텍처를 목표로, 기능 구현 전 항상 여러 대안을 비교하고 근거를 남기며 개발합니다.
+프로덕션 품질을 지향하는 이커머스 포트폴리오 프로젝트.  
+비관적 락 기반 동시성 제어, Redis 장바구니, SSE 실시간 관리자 대시보드를 구현했습니다.
 
-## 핵심 구성요소
+**Live Demo**
+- Frontend: https://commercecore.pages.dev
+- Backend API: https://commerce-core-backend.onrender.com
 
-- Payment Orchestration Layer
-- 자체 Double-entry Ledger
-- 멀티 PG 연동 (TossPayments + PortOne)
-- 정산 배치 (Reconciliation)
+> Render 무료 티어 사용으로 15분 비활성 후 슬립 상태로 전환됩니다. 첫 요청 시 응답이 30초 정도 걸릴 수 있습니다.
 
-개발 순서는 B2C를 먼저 구축하고, B2B(승인 워크플로우·계약 단가·여신/인보이스)는 Phase 2에서 다룹니다.
+---
 
 ## 기술 스택
 
 | 영역 | 기술 |
 |---|---|
-| Backend | NestJS + PostgreSQL |
-| Cache / 세션 | Redis |
-| 메시징 | Kafka (결제 파이프라인 전용) |
-| Frontend | React (Vite) |
+| Backend | NestJS, TypeORM, PostgreSQL |
+| Cache / 세션 | Redis (ioredis) |
+| Frontend | React, Vite, TypeScript |
+| 실시간 | Server-Sent Events (SSE, RxJS Subject) |
+| DB (프로덕션) | Supabase (PostgreSQL) |
+| Redis (프로덕션) | Upstash |
+| 배포 | Render (백엔드), Cloudflare Pages (프론트엔드) |
 | 부하테스트 | k6 |
+
+---
+
+## 핵심 기능
+
+### 상품 카탈로그
+- 카테고리별 상품 목록 조회
+- 상품 상세 + 옵션(사이즈/색상)별 재고 조회
+
+### 장바구니
+- Redis 기반 비로그인 장바구니 (`cart:{sessionId}` 해시, TTL 14일)
+- 클라이언트 UUID를 `X-Cart-Id` 헤더로 전달해 세션 식별
+- 상품 추가 / 수량 변경 / 항목 삭제 / 전체 조회
+
+### 주문
+- **비관적 락** (`SELECT ... FOR UPDATE`)으로 동시 주문 시 재고 초과 판매 방지
+- 주문 전 재고 사전 확인 API 분리 (`POST /orders/validate-stock`)
+- 주문번호 + 이메일 조합으로 게스트 주문 조회
+
+### 관리자 대시보드
+- 전체 재고 현황 / 최근 주문 목록 조회
+- 주문 상태 전이 (PENDING → PAID → SHIPPED → DELIVERED / CANCELLED)
+- **SSE 실시간 갱신**: 재고 변경·신규 주문 발생 시 페이지 새로고침 없이 자동 반영
+- 토큰 기반 인증 (`X-Admin-Token` 헤더 또는 `?token=` 쿼리 파라미터)
+
+---
+
+## 로컬 개발 환경
+
+### 사전 요구사항
+- Node.js 20+
+- Docker Desktop (PostgreSQL, Redis 컨테이너 실행용)
+
+### 실행
+
+```bash
+# 1. 인프라 컨테이너 실행
+docker-compose up -d
+
+# 2. 백엔드
+cd backend
+npm install
+npm run start:dev   # http://localhost:3001
+
+# 3. 프론트엔드 (별도 터미널)
+cd frontend
+npm install
+npm run dev         # http://localhost:5173
+```
+
+### 환경변수 (`backend/.env`)
+
+```env
+DB_HOST=localhost
+DB_PORT=5433
+DB_USERNAME=postgres
+DB_PASSWORD=postgres
+DB_DATABASE=postgres
+
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+PORT=3001
+ADMIN_TOKEN=your_admin_token
+
+CORS_ORIGIN=http://localhost:5173
+```
+
+> PostgreSQL 컨테이너는 로컬 충돌 방지를 위해 `5433:5432`로 매핑합니다.
+
+### DB 스키마 적용
+
+pgAdmin 또는 아래 명령으로 `commerce-core-schema.sql`을 실행하세요.
+
+```bash
+psql -h localhost -p 5433 -U postgres -d postgres -f commerce-core-schema.sql
+```
+
+---
+
+## API 명세
+
+모든 장바구니·주문 요청에 `X-Cart-Id` 헤더 필요.  
+에러 응답 포맷: `{ "statusCode": number, "message": string }`
+
+### 상품
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/products?category=` | 카테고리별 상품 목록 |
+| GET | `/products/:id` | 상품 상세 + 옵션별 재고 |
+
+### 장바구니
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/cart` | 장바구니 조회 |
+| POST | `/cart/items` | 상품 추가 |
+| PATCH | `/cart/items/:productOptionId` | 수량 변경 |
+| DELETE | `/cart/items/:productOptionId` | 항목 제거 |
+
+### 주문
+
+| Method | Path | 설명 |
+|---|---|---|
+| POST | `/orders/validate-stock` | 주문 전 재고 확인 (항상 200) |
+| POST | `/orders` | 주문 생성 (비관적 락 + 트랜잭션) |
+| GET | `/orders/lookup?orderNumber=&email=` | 주문번호+이메일 조합 조회 |
+
+### 관리자 (인증 필요: `X-Admin-Token` 헤더)
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/admin/stock-overview` | 전체 재고 현황 |
+| GET | `/admin/orders/recent` | 최근 주문 목록 |
+| PATCH | `/admin/orders/:id/status` | 주문 상태 전이 |
+| GET | `/admin/events` | SSE 스트림 (`stock-update`, `order-update`) |
+
+---
+
+## 주요 설계 결정
+
+| 결정 | 선택 | 근거 |
+|---|---|---|
+| 동시성 제어 | 비관적 락 (`SELECT ... FOR UPDATE`) | 재고 초과 판매 방지 정확성 우선 |
+| 장바구니 저장소 | Redis | 비로그인 사용자 지원, 빠른 읽기/쓰기 |
+| 실시간 갱신 | SSE (RxJS Subject) | 단방향 스트림으로 충분, WebSocket 불필요 |
+| 주문 조회 | 주문번호 + 이메일 조합 | 이메일 단독 조회의 보안 취약점 방지 |
+| 재고 확인 분리 | `validate-stock` API 별도 제공 | 주문 실패 전 품절 상품 사전 안내 |
+
+자세한 설계 결정 로그는 [CLAUDE.md](./CLAUDE.md)를 참고하세요.
+
+---
+
+## 부하테스트 결과
+
+k6로 재고 1개인 상품에 동시 10명이 주문 시도:
+
+- 성공: 1건 / 실패(409): 9건
+- 최종 재고: 0개
+- 비관적 락이 재고 초과 판매를 정확히 방지함을 확인
+
+---
 
 ## 폴더 구조
 
 ```
 CommerceCore/
-  CLAUDE.md          # 설계 결정 로그 및 진행 상황 (지속적 컨텍스트)
-  Docker-compose.yml  # PostgreSQL / Redis / Kafka 로컬 환경
-  backend/            # NestJS
-  frontend/           # React (Vite)
+├── backend/                      # NestJS API 서버
+│   ├── src/
+│   │   ├── products/             # 상품 카탈로그
+│   │   ├── cart/                 # 장바구니 (Redis)
+│   │   ├── orders/               # 주문 (비관적 락)
+│   │   ├── admin/                # 관리자 대시보드
+│   │   ├── redis/                # Redis 모듈
+│   │   └── common/events/        # SSE 이벤트 (RxJS Subject)
+│   └── Dockerfile
+├── frontend/                     # React (Vite)
+│   └── src/
+│       ├── pages/
+│       └── api/
+├── commerce-core-schema.sql      # DDL + 시드 데이터
+├── docker-compose.yml            # 로컬 개발용 (PostgreSQL, Redis)
+└── docker-compose.prod.yml       # 프로덕션 참고용
 ```
 
-## 로컬 개발 환경
-
-### 1. 인프라 (Docker Compose)
-
-```bash
-docker-compose -f Docker-compose.yml up -d
-```
-
-- PostgreSQL: `localhost:5433` (로컬 PostgreSQL과의 포트 충돌 회피)
-- Redis: `localhost:6379`
-- Kafka: `localhost:9092` (KRaft 모드, `apache/kafka:3.7.0`)
-
-### 2. 백엔드
-
-```bash
-cd backend
-npm install
-npm run start:dev   # http://localhost:3001
-```
-
-`.env` 예시:
-
-```
-DB_HOST=localhost
-DB_PORT=5433
-DB_USERNAME=commerce
-DB_PASSWORD=commerce_local_pw
-DB_DATABASE=commerce_core
-PORT=3001
-```
-
-### 3. 프론트엔드
-
-```bash
-cd frontend
-npm install
-npm run dev   # http://localhost:5173 (사용 중이면 자동으로 다음 포트)
-```
-
-## API 개요
-
-모든 장바구니/주문 요청에는 `X-Cart-Id` 헤더가 필요합니다. 에러 응답은 `{ statusCode, message }` 포맷입니다.
-
-| Method | Path | 설명 |
-|---|---|---|
-| GET | `/products?category=` | 카테고리별 상품 목록 조회 |
-| GET | `/products/:id` | 상품 상세 + 옵션(사이즈/색상별 재고) 조회 |
-| GET | `/cart` | 현재 장바구니 조회 |
-| POST | `/cart/items` | 장바구니에 상품 추가 |
-| PATCH | `/cart/items/:productOptionId` | 수량 변경 |
-| DELETE | `/cart/items/:productOptionId` | 장바구니 항목 제거 |
-| POST | `/orders/validate-stock` | 주문 전 재고 확인 (항상 200) |
-| POST | `/orders` | 주문 생성 (비관적 락 기반 재검증) |
-| GET | `/orders/lookup?orderNumber=&email=` | 주문번호+이메일 조합 조회 |
-
-전체 스키마는 `commerce-core-schema.sql` 참고.
-
-## 설계 원칙
-
-- Ledger는 결제수단에 독립적으로 설계 (특정 PG에 종속되지 않도록)
-- User 모델은 향후 기업 소속 사용자 확장을 고려해 설계
-- 구현은 계층별이 아닌 **기능별 수직 슬라이스** 순서로 진행: 상품 조회 → 장바구니 → 재고 확인 → 주문 생성 → 주문 조회
-
-모든 설계 결정(대안 비교, 선택 근거, 재검토 트리거)은 [`CLAUDE.md`](./CLAUDE.md)에 기록되어 있습니다.
-
-## 진행 상황
-
-- [x] 상품 조회 API (`GET /products`, `GET /products/:id`)
-- [x] 프론트엔드 프로젝트 스캐폴딩
-- [ ] 프론트엔드 상품 목록/상세 화면 연결
-- [ ] 장바구니 (Redis)
-- [ ] 재고 확인 / 주문 생성 (비관적 락)
-- [ ] 주문 조회
-- [ ] k6 부하테스트 (동시성 검증)
-
-개발 과정은 Tistory 블로그 시리즈 "이커머스 핵심기능"에 기록하고 있습니다.
+---
 
 ## 커밋 컨벤션 & Pre-commit 훅 (Husky)
 
-레포 루트(`.git`이 있는 위치, `backend/`·`frontend/` 밖)에 Husky 기반 공통 레이어가 적용되어 있습니다. Python 설치가 필요한 `pre-commit` 프레임워크 대신, Node 기반이라 `npm install`만으로 훅이 자동 등록됩니다.
+`feat/fix/refactor/docs/test/chore` 타입의 커밋 메시지만 허용합니다.  
+루트에서 `npm install` 시 Husky 훅이 자동 등록됩니다.
 
 ```
 CommerceCore/
 ├── .husky/
-│   ├── pre-commit          # 위생 검사 실행 (scripts/pre-commit-checks.js)
-│   └── commit-msg          # commitlint 실행
-├── commitlint.config.js     # feat/fix/refactor/docs/test/chore 타입 검증
-├── package.json             # devDependencies: husky, @commitlint/cli
-└── scripts/
-    └── pre-commit-checks.js # 줄 끝 공백 / 파일 끝 개행 / 병합 충돌 마커 / 대용량 파일 검사
+│   ├── pre-commit      # 줄 끝 공백, 개행, 병합 충돌 마커, 대용량 파일 검사
+│   └── commit-msg      # commitlint 실행
+└── commitlint.config.js
 ```
-
-- **커밋 메시지 검사** (`commit-msg`): `{type}: {제목}` 형식만 허용, 타입은 `feat/fix/refactor/docs/test/chore` 중 하나.
-- **위생 검사** (`pre-commit`): 스테이징된 파일의 줄 끝 공백, 파일 끝 개행 누락, 병합 충돌 마커(`<<<<<<<` 등), 1MB 초과 대용량 파일을 검사.
-- 최초 클론 후 루트에서 `npm install`을 실행하면 `prepare` 스크립트가 훅을 자동 활성화합니다 (`git config core.hooksPath` 별도 설정 불필요).
-
-### 문제 해결
-
-- `pre-commit script failed` → 위생 검사에서 걸린 파일을 확인 후 수정, 다시 `git add` 후 재커밋
-- `commit-msg script failed` → 커밋 메시지가 `feat/fix/refactor/docs/test/chore` 중 하나로 시작하는지 확인
-- Windows에서 훅 실행 권한 문제가 생기면 CMD/PowerShell 대신 Git Bash에서 커밋 진행
