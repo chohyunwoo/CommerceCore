@@ -76,11 +76,6 @@ export interface CreateOrderResult {
   totalAmount: number;
 }
 
-export interface OrderCompleteState extends CreateOrderResult {
-  buyerName: string;
-  buyerEmail: string;
-}
-
 export interface ConfirmPaymentResult {
   orderNumber: string;
   status: string;
