@@ -6,6 +6,8 @@ import { CheckoutPage } from './pages/CheckoutPage';
 import { OrderCompletePage } from './pages/OrderCompletePage';
 import { OrderLookupPage } from './pages/OrderLookupPage';
 import { AdminPage } from './pages/AdminPage';
+import { PaymentSuccessPage } from './pages/PaymentSuccessPage';
+import { PaymentFailPage } from './pages/PaymentFailPage';
 import './App.css';
 
 function App() {
@@ -31,6 +33,8 @@ function App() {
           <Route path="/order-complete" element={<OrderCompletePage />} />
           <Route path="/orders/lookup" element={<OrderLookupPage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="/payment/success" element={<PaymentSuccessPage />} />
+          <Route path="/payment/fail" element={<PaymentFailPage />} />
         </Routes>
       </main>
     </>
