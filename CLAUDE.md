@@ -221,7 +221,7 @@ Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TT
 |---|---|---|
 | GET | `/admin/stock-overview` | 전체 상품 옵션의 현재 재고 목록 |
 | GET | `/admin/orders/recent` | 최근 주문 목록 (최대 20건) |
-| PATCH | `/admin/orders/:id/status` | 주문 상태 전이. body: `{ status }`. 유효하지 않은 전이 시 400 |
+| PATCH | `/admin/orders/:id/status` | 주문 상태 전이. body: `{ status }`. 유효하지 않은 전이 시 400. PAID→CANCELLED는 TossPayments 결제취소 API 호출 후 성공해야 전이됨(결정 26) — 실패 시 400 `PAYMENT_CANCEL_FAILED`, 상태 변경 없음 |
 | GET | `/admin/events` | SSE. `stock-update`/`order-update` 이벤트를 이름으로 구분해 하나의 연결로 푸시 |
 
 ### 헬스체크 (Health) — 인증 불필요
@@ -336,6 +336,15 @@ CREATE TABLE order_items (
 - **선택 근거**: (b). 결정 2(재고 동시성 제어에 비관적 락 선택)와 같은 판단 기준 — 현재 트래픽 규모에서는 락 대기로 인한 지연보다 정확성이 우선. 다만 락을 쥔 채로 외부 API(Toss)를 호출하는 트레이드오프가 있음을 인지하고 채택.
 - **재검토 트리거**: 결제 동시 요청이 늘어나 락 대기가 체감되는 시점 → (a) 원자적 상태 컬럼 방식으로 전환 검토.
 - **테스트 범위**: 실제 DB 락 동시성 검증은 이미 `k6/order-concurrency.js`가 담당 중이라 중복하지 않음. `OrdersService`/`PaymentsService` 유닛테스트는 Repository/DataSource/Redis/`fetch`를 모킹해 비즈니스 로직(금액 계산, 재시도/멱등 분기, 에러 매핑, 상태 가드)만 검증 — 역할을 분리함.
+
+### 26. 프로덕션 버그 수정 — 이메일 대소문자 불일치 + 관리자 취소 시 Toss 미연동
+
+- **배경**: 배포 후 두 가지 문제 발견(2026-08-18). (1) `lookupOrder`가 `buyerEmail`을 정규화 없이 정확 일치로 비교해, 결제 시 입력한 이메일과 조회 시 입력한 이메일의 대소문자가 다르면 존재하는 주문도 404로 응답(`ORD-20260818-4BP43U`로 실제 재현 확인). (2) 관리자 주문 취소가 DB `status`만 바꾸고 TossPayments 쪽엔 아무 취소 요청도 보내지 않음 — `Order`에 `paymentKey`를 저장하는 컬럼 자체가 없어 애초에 불가능한 상태였음.
+- **이메일 정규화**: `CreateOrderDto.buyerEmail`, `LookupOrderQueryDto.email`에 `@Transform`으로 trim+lowercase 적용. 기존 데이터는 `UPDATE orders SET buyer_email = LOWER(TRIM(buyer_email));`로 백필(결정 22와 동일 방식, Supabase SQL 수동 실행).
+- **Toss 취소 연동**: `orders.payment_key` 컬럼 추가(nullable — PENDING으로 끝난 주문은 결제 자체가 없어 값이 없음). `PaymentsService.confirm()`이 승인 성공 시 `paymentKey`를 저장하고, 신규 `PaymentsService.cancel(paymentKey, reason)`이 Toss 취소 API(`POST /v1/payments/{paymentKey}/cancel`)를 호출. `AdminService.updateOrderStatus()`를 트랜잭션 + `pessimistic_write` 락으로 감싸(기존엔 락이 전혀 없어 동시 상태변경 레이스도 방치돼 있었음) PAID→CANCELLED 전이 시 Toss 취소를 먼저 호출하고, 실패하면 예외를 던져 트랜잭션을 롤백— DB 상태도 그대로 유지됨(취소 사유는 고정 문구 사용, 관리자 입력 UI는 아직 없음).
+- **레거시 주문 처리**: 이 기능 배포 이전에 이미 PAID된 주문(`payment_key`가 NULL)은 자동 취소가 불가능하므로, 추측으로 처리하지 않고 명확한 에러로 막아 수동 확인을 안내함.
+- **Idempotency-Key 공식 메커니즘 발견**: TossPayments 전체 POST API가 `Idempotency-Key` 헤더를 지원하며(15일 유효), 같은 키로 재요청 시 최초 응답을 그대로 반환해 중복 처리를 막아줌을 확인(2026-08-18, 공식 문서). 기존 PR(#29)의 confirm 멱등성 처리는 `ALREADY_PROCESSED_PAYMENT` 에러 코드 감지 방식뿐이었는데, 이 공식 헤더를 놓치고 있었음이 드러남. 이번에 confirm(`Idempotency-Key: confirm:{orderId}`)과 cancel(`Idempotency-Key: cancel:{paymentKey}`) 모두에 적용. 기존 에러 코드 감지는 보조 안전망으로 유지. 타임아웃·재시도·Idempotency-Key 로직은 `requestTossWithRetry()` 공통 헬퍼로 추출해 confirm/cancel이 공유.
+- **재검토 트리거**: 레거시(paymentKey 없는) PAID 주문이 다수 발생하면 → Toss 결제 조회 API(`GET /v1/payments/orders/{orderId}`)로 paymentKey를 소급 조회해 백필하는 스크립트 검토. 관리자가 취소 사유를 직접 입력해야 할 필요가 생기면 → `UpdateOrderStatusDto`에 `reason` 필드 추가 + 프론트 UI 확장 검토.
 
 ### 테스트 데이터
 

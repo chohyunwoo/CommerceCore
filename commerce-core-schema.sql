@@ -43,6 +43,7 @@ CREATE TABLE orders (
     buyer_phone VARCHAR(30) NOT NULL,
     buyer_address VARCHAR(500) NOT NULL,
     total_amount INTEGER NOT NULL,
+    payment_key VARCHAR(200),
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     updated_at TIMESTAMP NOT NULL DEFAULT now()
 );

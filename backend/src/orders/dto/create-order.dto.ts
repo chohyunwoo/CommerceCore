@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsEmail,
@@ -8,6 +8,9 @@ import {
 import { CreateOrderItemDto } from './create-order-item.dto';
 
 export class CreateOrderDto {
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
   @IsEmail()
   buyerEmail: string;
 
