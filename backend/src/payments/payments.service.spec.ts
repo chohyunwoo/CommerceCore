@@ -26,6 +26,19 @@ function jsonResponse(status: number, body: unknown) {
   return { ok: status < 300, status, json: () => Promise.resolve(body) };
 }
 
+function lastFetchCall() {
+  const calls = (global.fetch as jest.Mock).mock.calls as [
+    string,
+    RequestInit,
+  ][];
+  const [url, init] = calls[calls.length - 1];
+  return {
+    url,
+    headers: init.headers as Record<string, string>,
+    body: init.body as string,
+  };
+}
+
 function createPaymentsService(order: Partial<Order> | null) {
   const orderRecord = order ? { ...order } : null;
 
@@ -105,8 +118,7 @@ describe('PaymentsService.confirm', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(domainEvents.emitOrderUpdate).toHaveBeenCalledTimes(1);
 
-    const [, init] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(init.headers['Idempotency-Key']).toBe('confirm:ORD-1');
+    expect(lastFetchCall().headers['Idempotency-Key']).toBe('confirm:ORD-1');
   });
 
   it('5xx 응답 후 재시도하면 성공한다', async () => {
@@ -215,10 +227,12 @@ describe('PaymentsService.cancel', () => {
     ).resolves.toBeUndefined();
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
-    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
-    expect(url).toBe('https://api.tosspayments.com/v1/payments/pay_1/cancel');
-    expect(init.headers['Idempotency-Key']).toBe('cancel:pay_1');
-    expect(JSON.parse(init.body)).toEqual({
+    const call = lastFetchCall();
+    expect(call.url).toBe(
+      'https://api.tosspayments.com/v1/payments/pay_1/cancel',
+    );
+    expect(call.headers['Idempotency-Key']).toBe('cancel:pay_1');
+    expect(JSON.parse(call.body)).toEqual({
       cancelReason: '관리자에 의한 주문 취소',
     });
   });

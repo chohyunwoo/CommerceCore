@@ -5,7 +5,7 @@ export class LookupOrderQueryDto {
   @IsNotEmpty()
   orderNumber: string;
 
-  @Transform(({ value }) =>
+  @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toLowerCase() : value,
   )
   @IsEmail()
