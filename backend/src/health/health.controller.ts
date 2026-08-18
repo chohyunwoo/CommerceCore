@@ -1,5 +1,6 @@
 import { Controller, Get, HttpStatus, Inject, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type { Redis } from 'ioredis';
@@ -9,6 +10,7 @@ import { REDIS_CLIENT } from '../redis/redis.constants';
 type DependencyStatus = 'up' | 'down';
 
 @ApiTags('health')
+@SkipThrottle()
 @Controller('health')
 export class HealthController {
   constructor(
