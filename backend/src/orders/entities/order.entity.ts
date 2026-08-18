@@ -40,6 +40,9 @@ export class Order {
   @Column({ name: 'total_amount', type: 'int' })
   totalAmount: number;
 
+  @Column({ name: 'payment_key', length: 200, nullable: true })
+  paymentKey: string | null;
+
   @OneToMany(() => OrderItem, (item) => item.order)
   items: OrderItem[];
 
