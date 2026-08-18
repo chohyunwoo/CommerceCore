@@ -351,7 +351,8 @@ CREATE TABLE order_items (
 - **배경**: 결정 26의 `payment_key` 컬럼을 `string | null` 유니온 타입으로 선언했다가 TypeORM이 컬럼 타입을 `Object`로 오인식해 Render 배포가 크래시 루프에 빠짐(PR #31 → 긴급 핫픽스 PR #32). 유닛테스트는 `DataSource`를 모킹하므로 이런 엔티티 메타데이터 오류를 원천적으로 못 잡음. 반면 이미 있던 `test/app.e2e-spec.ts`는 `AppModule`을 실제로 부팅(`app.init()`)하는 진짜 e2e 테스트라 이 버그를 그대로 잡아낼 수 있었는데, CI가 없어 커밋 전에 아무도 실행하지 않았음.
 - **비교한 대안**: (a) Docker 이미지 빌드까지 CI에 포함해 Render와 완전히 동일하게 검증 — 가장 확실하지만 지금 필요한 수준(엔티티/부팅 오류 조기 발견)을 넘어서는 과설계. (b) typecheck+lint+unit+e2e까지만.
 - **선택 근거**: (b). e2e 단계(`test/app.e2e-spec.ts`)가 오늘 사고의 근본 원인을 정확히 잡아내므로 목적에 충분.
-- **구현**: `.github/workflows/ci.yml` — `pull_request`/`push`(대상 `main`) 트리거, Postgres 16·Redis 7을 GitHub Actions `services`로 띄우고 `commerce-core-schema.sql`을 적재한 뒤 typecheck → lint → unit test → e2e test 순으로 실행. 로컬 재현 검증: `Order.paymentKey`를 일부러 다시 유니온 타입으로 되돌려 `npm run test:e2e` 실행 → 동일한 `DataTypeNotSupportedError`로 실패 확인, 원상 복구 후 재검증 통과 확인(2026-08-18).
+- **구현**: `.github/workflows/ci.yml` — `pull_request`(대상 `main`) 트리거, Postgres 16·Redis 7을 GitHub Actions `services`로 띄우고 스키마를 적재한 뒤 typecheck → lint → unit test → e2e test 순으로 실행. 로컬 재현 검증: `Order.paymentKey`를 일부러 다시 유니온 타입으로 되돌려 `npm run test:e2e` 실행 → 동일한 `DataTypeNotSupportedError`로 실패 확인, 원상 복구 후 재검증 통과 확인(2026-08-18).
+- **2026-08-18 갱신**: `push: branches: [main]` 트리거 제거. 일반 머지 커밋은 PR 브랜치 끝과 코드가 완전히 동일해 머지 직후 다시 도는 `push` 트리거가 이미 통과 확인한 것을 중복 실행하는 낭비였음(이 프로젝트는 항상 PR을 거쳐 머지하므로 직접 push 안전망이 불필요). `pull_request`만 남김.
 - **부수 발견**: `test:e2e`가 테스트 통과 후에도 종료되지 않는 문제 발견(Redis 클라이언트 커넥션이 `app.close()`로 안 닫힘) — CI에서 행(hang)을 방지하기 위해 `--forceExit` 플래그 추가.
 - **재검토 트리거**: Docker 기반 배포와의 차이로 인한 사고가 또 발생하면 → CI에 실제 Docker 빌드 단계 추가 검토. Redis 커넥션을 `OnModuleDestroy`로 정식 종료하는 방식으로 전환하면 `--forceExit` 제거 검토.
 
@@ -362,6 +363,16 @@ CREATE TABLE order_items (
 - **선택 근거**: (b). 코드가 곧 명세라 어긋날 위험이 낮고, 이미 있는 DTO 구조에 `@ApiProperty` 추가하는 수준의 낮은 비용.
 - **구현**: `main.ts`에 `SwaggerModule` 설정, `GET /docs`에서 Swagger UI 제공. 모든 DTO에 `@ApiProperty`, 모든 컨트롤러에 `@ApiTags`/`@ApiOperation` 추가. `X-Cart-Id`/`X-Admin-Token` 커스텀 헤더는 `DocumentBuilder.addApiKey()`로 보안 스킴 등록해 Swagger UI "Authorize" 버튼으로 테스트 가능. 배포 환경에도 별도 게이팅 없이 그대로 노출(민감 정보 없는 API 구조 문서라 포트폴리오 열람 목적에 부합).
 - **재검토 트리거**: API에 민감한 내부 정보가 노출되기 시작하면 → 환경변수로 프로덕션 노출 여부 게이팅 검토.
+
+### 29. TypeORM 마이그레이션 도입
+
+- **배경**: `synchronize: false`는 맞지만, 스키마 변경(가장 최근엔 `payment_key` 컬럼 추가)을 전부 Supabase SQL Editor에 수동 SQL로 처리해왔음 — "스키마 변경 이력 관리"로 보기 어렵고, 로컬/CI/프로덕션 세 환경의 스키마가 실제로 동일한지 보장할 방법이 없었음.
+- **비교한 대안**: (a) `synchronize: true`로 전환 — 프로덕션에서 예측 불가능한 자동 스키마 변경·데이터 손실 위험 있어 기각(결정 4/22와 동일 기준). (b) TypeORM 마이그레이션 도입.
+- **선택 근거**: (b). `npm run migration:generate`/`migration:run`/`migration:revert` 스크립트 추가(`typeorm-ts-node-commonjs` CLI, 새 패키지 설치 불필요 — `dotenv`만 명시적 의존성으로 추가).
+- **구현 — 안전한 편입 전략**: 초기 마이그레이션(`src/migrations/*-InitialSchema.ts`)을 `commerce-core-schema.sql` 기준으로 작성하되 `CREATE TABLE IF NOT EXISTS`/`CREATE TYPE ... EXCEPTION WHEN duplicate_object`/`ADD COLUMN IF NOT EXISTS` 등으로 **멱등적으로** 작성. 빈 DB(CI)에서는 실제로 스키마를 생성하고, 이미 스키마가 있는 환경(로컬/프로덕션)에서는 아무것도 바꾸지 않고 마이그레이션 이력에만 편입됨 — 로컬 DB에 실행해 기존 데이터(상품/주문) 그대로 유지되는 것, 빈 DB에 실행해 6개 테이블이 정상 생성되는 것 모두 직접 검증함(2026-08-18).
+- CI(`ci.yml`)의 "Load schema" 단계를 `npm run migration:run`으로 교체해 마이그레이션 자체가 매 PR마다 검증되도록 함. `commerce-core-schema.sql`은 삭제하지 않고 ERD 시각화용 참고 스냅샷으로 유지, 상단에 "이제 `src/migrations/`가 기준"이라는 안내 추가.
+- **`migrationsRun: true`(앱 부팅 시 자동 실행)는 이번엔 켜지지 않음** — 결정 26/27의 배포 크래시를 겪은 직후라, 자동 실행까지 한 번에 붙이는 건 리스크를 늘린다고 판단. 당분간 `npm run migration:run` 수동 실행으로 검증 기간을 둠.
+- **재검토 트리거**: 마이그레이션 워크플로우가 몇 번의 실제 스키마 변경을 거쳐 안정성이 검증되면 → `migrationsRun: true`로 전환해 배포 시 자동 적용 검토.
 
 ### 테스트 데이터
 
