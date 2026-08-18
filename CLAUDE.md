@@ -383,6 +383,17 @@ CREATE TABLE order_items (
 - **비교한 대안(캐시 저장소)**: (a) 인메모리, (b) Redis 기반(이미 인프라 있음). **선택**: (a) — 단일 인스턴스 배포라 공유 캐시가 불필요(결정 3과 동일 판단 기준).
 - **재검토 트리거**: 실제 트래픽 패턴 분석 후 특정 엔드포인트에 더 엄격한 제한이 필요해지면 → 라우트별 세분화 검토. 여러 인스턴스로 확장되면 → Redis 기반 공유 캐시로 전환.
 
+### 31. 성능 병목 진단(P2-1) → 증거 기반 가설-검증-반증 반복, 쿼리 분리로 해결
+
+- **배경**: VU(가상 사용자) 수를 늘려도 `GET /orders/lookup`(캐싱·락 없는 순수 조회, 항상 실제 DB 쿼리 발생) 처리량이 거의 늘지 않고 p95 응답시간만 3배 이상 치솟는 포화 패턴 발견(VU 10/20/30: 32.5/34.5/42.6 req/s, p95 509ms/1.38s/1.69s). 원인을 추측으로 단정하지 않고 후보를 나열한 뒤 하나씩 실측으로 검증하는 방식으로 진행.
+- **가설 1 (DB 커넥션 풀 부족, 기본값 10)**: `DB_POOL_MAX` 환경변수를 20으로 올려 A/B 재측정. VU30 기준 42.6→35.5 req/s로 오히려 소폭 악화 → **반증**.
+- **가설 2 (쿼리 자체가 느림, 3단계 JOIN 비용)**: Node/TypeORM을 거치지 않고 Supabase에 동일 쿼리를 직접 `EXPLAIN ANALYZE`로 실행. 실행시간 0.479ms, order_items JOIN은 "never executed"(orders 필터링 단계에서 이미 0건이라 JOIN 자체가 실행 안 됨) → **반증**.
+- **비교 테스트**: 같은 VU로 캐싱 없는 단순 조회 엔드포인트 `/health`를 동시에 측정. `/health`는 VU 증가에 비례해 처리량이 늘었지만(47→79→101 req/s), `/orders/lookup`만 정체 → 전역 CPU 부족이 아니라 **라우트별 처리 비용 차이**임을 시사.
+- **원인 특정**: 남은 설명은 TypeORM이 매 요청마다 4개 엔티티(orders→order_items→product_options→products)에 걸친 관계(relations)를 조립하는 애플리케이션 레벨 CPU 비용. Render 무료 티어(0.1 vCPU)에서 이 비용이 누적되며 병목이 됨.
+- **개선**: `lookupOrder()`를 "존재 확인(단순 쿼리)" → "존재할 때만 관계 조회"의 2단계로 분리(`backend/src/orders/orders.service.ts`). 개선 후 VU30 기준 처리량 42.6→68.4 req/s(+60%), p95 1.69s→1.05s(-38%) 확인.
+- **한계**: TypeORM 쿼리 빌더 자체의 비용인지 검증 파이프라인 등 다른 요소인지 더 세분화하려면 유료 APM/프로파일러가 필요 — 블랙박스 k6 테스트로 확인 가능한 범위는 여기까지임을 인지.
+- **재검토 트리거**: 유료 인스턴스로 전환하거나 APM 도입 시 → 더 정밀한 프로파일링으로 재검증.
+
 ### 테스트 데이터
 
 - `categories`: 신발, 상의, 하의
@@ -429,4 +440,6 @@ CREATE TABLE order_items (
 19. ~~관리자 인증 (`X-Admin-Token` Guard, SSE는 `?token=` 쿼리 파라미터)~~ ✅
 20. ~~배포 완료 (Render + Supabase + Upstash + Cloudflare Pages)~~ ✅ — 2026-08-16
 21. ~~TossPayments 단일 PG 결제 연동 (POST /payments/confirm, 결제창 흐름 구현)~~ ✅ — 2026-08-16
-22. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
+22. ~~성능 병목 진단(P2-1) — 증거 기반 가설 검증(DB 풀/쿼리시간 반증 → 라우트별 비교 → 쿼리 분리로 해결, +60% 처리량/-38% p95)~~ ✅ — 2026-08-18
+23. 남은 작업: 정식 k6 처리량 스크립트(`k6/throughput-test.js`)에 thresholds(p95<300ms, error_rate<1%) 명시해 pass/fail 자동 판정되도록 정리
+24. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
