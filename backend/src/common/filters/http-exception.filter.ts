@@ -31,7 +31,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const exceptionResponse = exception.getResponse();
 
       if (typeof exceptionResponse === 'string') {
-        return { statusCode: status, message: exceptionResponse, code: 'HTTP_EXCEPTION' };
+        return {
+          statusCode: status,
+          message: exceptionResponse,
+          code: 'HTTP_EXCEPTION',
+        };
       }
 
       const { message, code } = exceptionResponse as {
@@ -42,9 +46,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       return { statusCode: status, message, code: code ?? 'HTTP_EXCEPTION' };
     }
 
-    this.logger.error(
-      exception instanceof Error ? exception.stack : exception,
-    );
+    this.logger.error(exception instanceof Error ? exception.stack : exception);
 
     return {
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
