@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product } from './entities/product.entity';
+import { AppErrors } from '../common/errors/app-errors';
+import { AppException } from '../common/errors/app-exception';
 
 export interface PaginatedProducts {
   items: Product[];
@@ -40,7 +42,10 @@ export class ProductsService {
     });
 
     if (!product) {
-      throw new NotFoundException(`상품(id: ${id})을 찾을 수 없습니다.`);
+      throw new AppException(
+        AppErrors.PRODUCT_NOT_FOUND,
+        `상품(id: ${id})을 찾을 수 없습니다.`,
+      );
     }
 
     return product;

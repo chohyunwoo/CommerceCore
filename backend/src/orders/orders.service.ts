@@ -1,9 +1,4 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import type { Redis } from 'ioredis';
@@ -24,6 +19,8 @@ import {
   OrderLookupResponse,
   ValidateStockResponse,
 } from './orders.types';
+import { AppErrors } from '../common/errors/app-errors';
+import { AppException } from '../common/errors/app-exception';
 
 @Injectable()
 export class OrdersService {
@@ -109,7 +106,7 @@ export class OrdersService {
         });
 
         if (hasInsufficientStock) {
-          throw new ConflictException('재고가 부족합니다.');
+          throw new AppException(AppErrors.STOCK_INSUFFICIENT);
         }
 
         const productIds = [
@@ -206,7 +203,7 @@ export class OrdersService {
       }
     }
 
-    throw new Error('주문번호 생성에 실패했습니다.');
+    throw new AppException(AppErrors.ORDER_NUMBER_GENERATION_FAILED);
   }
 
   async lookupOrder(query: LookupOrderQueryDto): Promise<OrderLookupResponse> {
@@ -219,7 +216,7 @@ export class OrdersService {
     });
 
     if (!order) {
-      throw new NotFoundException('주문 정보를 찾을 수 없습니다.');
+      throw new AppException(AppErrors.ORDER_NOT_FOUND);
     }
 
     return {

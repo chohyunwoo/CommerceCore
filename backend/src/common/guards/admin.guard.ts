@@ -1,11 +1,8 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
+import { AppErrors } from '../errors/app-errors';
+import { AppException } from '../errors/app-exception';
 
 @Injectable()
 export class AdminGuard implements CanActivate {
@@ -21,7 +18,7 @@ export class AdminGuard implements CanActivate {
 
     const adminToken = this.configService.get<string>('ADMIN_TOKEN');
     if (!adminToken || token !== adminToken) {
-      throw new UnauthorizedException('관리자 인증이 필요합니다.');
+      throw new AppException(AppErrors.ADMIN_AUTH_REQUIRED);
     }
     return true;
   }
