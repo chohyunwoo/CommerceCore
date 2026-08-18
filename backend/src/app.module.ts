@@ -33,12 +33,14 @@ import { HealthModule } from './health/health.module';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
         const databaseUrl = configService.get<string>('DATABASE_URL');
+        const poolMax = configService.get<number>('DB_POOL_MAX', 10);
         if (databaseUrl) {
           // 프로덕션: Supabase 등 URL 기반 연결 (SSL 필수)
           return {
             type: 'postgres',
             url: databaseUrl,
             ssl: { rejectUnauthorized: false },
+            extra: { max: poolMax },
             autoLoadEntities: true,
             synchronize: false,
           };
@@ -51,6 +53,7 @@ import { HealthModule } from './health/health.module';
           username: configService.get<string>('DB_USERNAME'),
           password: configService.get<string>('DB_PASSWORD'),
           database: configService.get<string>('DB_DATABASE'),
+          extra: { max: poolMax },
           autoLoadEntities: true,
           synchronize: false,
         };
