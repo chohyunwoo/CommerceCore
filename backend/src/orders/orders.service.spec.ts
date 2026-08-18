@@ -68,6 +68,7 @@ function createOrdersService(managerOptions: ManagerMockOptions) {
   const service = new OrdersService(
     {} as never,
     {} as never,
+    {} as never,
     dataSource as never,
     redis as never,
     domainEvents as never,
