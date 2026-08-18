@@ -29,6 +29,8 @@ export class OrdersService {
     private readonly productOptionRepository: Repository<ProductOption>,
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
+    @InjectRepository(OrderItem)
+    private readonly orderItemRepository: Repository<OrderItem>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     @Inject(REDIS_CLIENT)
@@ -207,17 +209,24 @@ export class OrdersService {
   }
 
   async lookupOrder(query: LookupOrderQueryDto): Promise<OrderLookupResponse> {
+    // 존재 확인은 단순 쿼리로 먼저 처리 — 없는 주문이면 무거운 관계(JOIN) 쿼리를
+    // 아예 조립하지 않는다. TypeORM이 4개 엔티티에 걸친 relations를 매 요청마다
+    // 빌드하는 비용이 CPU가 제한된 환경(Render 무료 티어)에서 눈에 띄게 커서 분리함.
     const order = await this.orderRepository.findOne({
       where: {
         orderNumber: query.orderNumber,
         buyerEmail: query.email,
       },
-      relations: { items: { productOption: { product: true } } },
     });
 
     if (!order) {
       throw new AppException(AppErrors.ORDER_NOT_FOUND);
     }
+
+    const items = await this.orderItemRepository.find({
+      where: { order: { id: order.id } },
+      relations: { productOption: { product: true } },
+    });
 
     return {
       orderNumber: order.orderNumber,
@@ -228,7 +237,7 @@ export class OrdersService {
       buyerAddress: order.buyerAddress,
       totalAmount: order.totalAmount,
       createdAt: order.createdAt,
-      items: order.items.map((item) => ({
+      items: items.map((item) => ({
         productName: item.productOption.product.name,
         size: item.productOption.size,
         color: item.productOption.color,
