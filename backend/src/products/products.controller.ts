@@ -1,8 +1,18 @@
-import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { CacheInterceptor, CacheTTL } from '@nestjs/cache-manager';
+import {
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Query,
+  UseInterceptors,
+} from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 
 @ApiTags('products')
+@UseInterceptors(CacheInterceptor)
+@CacheTTL(30_000)
 @Controller('products')
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
