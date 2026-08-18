@@ -55,6 +55,11 @@ export const AppErrors = {
     code: 'PAYMENT_PG_CONFIRM_FAILED',
     message: 'TossPayments 승인에 실패했습니다.',
   },
+  PAYMENT_CANCEL_FAILED: {
+    status: 400,
+    code: 'PAYMENT_CANCEL_FAILED',
+    message: 'TossPayments 결제 취소에 실패했습니다.',
+  },
   ORDER_STATUS_TRANSITION_INVALID: {
     status: 400,
     code: 'ORDER_STATUS_TRANSITION_INVALID',

@@ -101,8 +101,12 @@ describe('PaymentsService.confirm', () => {
 
     expect(result.status).toBe(OrderStatus.PAID);
     expect(orderRecord?.status).toBe(OrderStatus.PAID);
+    expect(orderRecord?.paymentKey).toBe('pay_1');
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(domainEvents.emitOrderUpdate).toHaveBeenCalledTimes(1);
+
+    const [, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(init.headers['Idempotency-Key']).toBe('confirm:ORD-1');
   });
 
   it('5xx 응답 후 재시도하면 성공한다', async () => {
@@ -192,4 +196,56 @@ describe('PaymentsService.confirm', () => {
     );
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('PaymentsService.cancel', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    jest.restoreAllMocks();
+  });
+
+  it('Toss가 성공 응답하면 취소가 완료된다', async () => {
+    global.fetch = jest.fn().mockResolvedValue(jsonResponse(200, {}));
+    const { service } = createPaymentsService(null);
+
+    await expect(
+      service.cancel('pay_1', '관리자에 의한 주문 취소'),
+    ).resolves.toBeUndefined();
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = (global.fetch as jest.Mock).mock.calls[0];
+    expect(url).toBe('https://api.tosspayments.com/v1/payments/pay_1/cancel');
+    expect(init.headers['Idempotency-Key']).toBe('cancel:pay_1');
+    expect(JSON.parse(init.body)).toEqual({
+      cancelReason: '관리자에 의한 주문 취소',
+    });
+  });
+
+  it('5xx 응답 후 재시도하면 성공한다', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(500, { message: '서버 오류' }))
+      .mockResolvedValueOnce(jsonResponse(200, {}));
+    const { service } = createPaymentsService(null);
+
+    await expect(
+      service.cancel('pay_1', '관리자에 의한 주문 취소'),
+    ).resolves.toBeUndefined();
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  }, 10000);
+
+  it('재시도가 소진되면 PAYMENT_CANCEL_FAILED를 던진다', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse(503, { message: '서비스 불가' }));
+    const { service } = createPaymentsService(null);
+
+    await expectAppError(
+      service.cancel('pay_1', '관리자에 의한 주문 취소'),
+      AppErrors.PAYMENT_CANCEL_FAILED,
+    );
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  }, 10000);
 });
