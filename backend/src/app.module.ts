@@ -10,6 +10,7 @@ import { OrdersModule } from './orders/orders.module';
 import { EventsModule } from './common/events/events.module';
 import { AdminModule } from './admin/admin.module';
 import { PaymentsModule } from './payments/payments.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { PaymentsModule } from './payments/payments.module';
     OrdersModule,
     AdminModule,
     PaymentsModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
