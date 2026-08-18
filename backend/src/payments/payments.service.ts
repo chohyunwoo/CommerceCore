@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -10,6 +6,8 @@ import { Order } from '../orders/entities/order.entity';
 import { OrderStatus } from '../orders/entities/order-status.enum';
 import { DomainEventsService } from '../common/events/domain-events.service';
 import { ConfirmPaymentDto } from './dto/confirm-payment.dto';
+import { AppErrors } from '../common/errors/app-errors';
+import { AppException } from '../common/errors/app-exception';
 
 const TOSS_CONFIRM_URL = 'https://api.tosspayments.com/v1/payments/confirm';
 
@@ -29,15 +27,16 @@ export class PaymentsService {
       where: { orderNumber: dto.orderId },
     });
     if (!order) {
-      throw new NotFoundException(`주문(${dto.orderId})을 찾을 수 없습니다.`);
+      throw new AppException(
+        AppErrors.ORDER_NOT_FOUND,
+        `주문(${dto.orderId})을 찾을 수 없습니다.`,
+      );
     }
     if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException('이미 처리된 주문입니다.');
+      throw new AppException(AppErrors.PAYMENT_ALREADY_PROCESSED);
     }
     if (order.totalAmount !== dto.amount) {
-      throw new BadRequestException(
-        '결제 금액이 주문 금액과 일치하지 않습니다.',
-      );
+      throw new AppException(AppErrors.PAYMENT_AMOUNT_MISMATCH);
     }
 
     const secretKey = this.configService.get<string>(
@@ -61,7 +60,8 @@ export class PaymentsService {
 
     if (!response.ok) {
       const error = (await response.json()) as { message: string };
-      throw new BadRequestException(
+      throw new AppException(
+        AppErrors.PAYMENT_PG_CONFIRM_FAILED,
         `TossPayments 승인 실패: ${error.message}`,
       );
     }

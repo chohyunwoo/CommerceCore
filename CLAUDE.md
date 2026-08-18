@@ -125,7 +125,9 @@ NCP VM 대신 무료 배포 조합(Render + Supabase + Upstash + Cloudflare Page
 
 - **비교한 대안**: RFC 7807 (Problem Details)
 - **선택 근거**: 초기에 발생할 수 있는 에러 종류(재고부족, 잘못된 요청, 리소스 없음 등)가 몇 가지로 한정될 것으로 판단해, 구현 비용이 낮은 단순 포맷을 선택.
-- **포맷**: `{ "statusCode": number, "message": string }`
+- **포맷**: `{ "statusCode": number, "message": string, "code": string }`
+- **2026-08-18 갱신**: `code` 필드 추가. 비즈니스 에러가 6개 파일 14곳에 문자열로 산발적으로 정의되면서 메시지 중복(`cart.service.ts`에 동일 메시지 2회) 문제가 생겨, `backend/src/common/errors/app-errors.ts`의 `AppErrors` 객체 하나로 모든 에러(`{ status, code, message }`)를 중앙 관리하도록 리팩터링. `AppException`이 이 카탈로그를 받아 던지고, `HttpExceptionFilter`는 `@Catch(HttpException)`에서 `@Catch()`(catch-all)로 확장해 `HttpException`이 아닌 예상치 못한 에러도 500 + `code: 'INTERNAL_SERVER_ERROR'`로 통일 응답(내부 메시지·스택은 노출하지 않고 서버 로그에만 기록). 프론트가 한글 메시지 텍스트 대신 `code`로 에러를 분기할 수 있게 됨.
+- **재검토 트리거**: DB 제약 위반(unique violation 등)을 별도 상태 코드로 세분화해야 하는 케이스가 실제로 생기는 시점 → `AppException`에 TypeORM 에러 매핑 추가 검토.
 
 ### 10. 재고 부족 응답 → 200 + `valid: false` (409 아님)
 
@@ -179,7 +181,7 @@ NCP VM 대신 무료 배포 조합(Render + Supabase + Upstash + Cloudflare Page
 
 ## API 명세
 
-**공통**: 모든 장바구니/주문 요청에 `X-Cart-Id` 헤더 필요. 에러는 `{ statusCode, message }` 포맷.
+**공통**: 모든 장바구니/주문 요청에 `X-Cart-Id` 헤더 필요. 에러는 `{ statusCode, message, code }` 포맷 (결정 9 참고).
 
 ### 상품 (Products)
 

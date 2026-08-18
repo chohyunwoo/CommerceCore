@@ -1,9 +1,7 @@
-import {
-  BadRequestException,
-  createParamDecorator,
-  ExecutionContext,
-} from '@nestjs/common';
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { Request } from 'express';
+import { AppErrors } from '../errors/app-errors';
+import { AppException } from '../errors/app-exception';
 
 export const CartId = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): string => {
@@ -11,7 +9,7 @@ export const CartId = createParamDecorator(
     const cartId = request.headers['x-cart-id'];
 
     if (!cartId || Array.isArray(cartId)) {
-      throw new BadRequestException('X-Cart-Id 헤더가 필요합니다.');
+      throw new AppException(AppErrors.CART_ID_REQUIRED);
     }
 
     return cartId;

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ProductOption } from '../products/entities/product-option.entity';
@@ -6,6 +6,8 @@ import { Order } from '../orders/entities/order.entity';
 import { OrderStatus } from '../orders/entities/order-status.enum';
 import { DomainEventsService } from '../common/events/domain-events.service';
 import { RecentOrderItem, StockOverviewItem } from './admin.types';
+import { AppErrors } from '../common/errors/app-errors';
+import { AppException } from '../common/errors/app-exception';
 
 const RECENT_ORDERS_LIMIT = 20;
 
@@ -46,14 +48,20 @@ export class AdminService {
     orderNumber: string,
     newStatus: OrderStatus,
   ): Promise<RecentOrderItem> {
-    const order = await this.orderRepository.findOne({ where: { orderNumber } });
+    const order = await this.orderRepository.findOne({
+      where: { orderNumber },
+    });
     if (!order) {
-      throw new NotFoundException(`주문(${orderNumber})을 찾을 수 없습니다.`);
+      throw new AppException(
+        AppErrors.ORDER_NOT_FOUND,
+        `주문(${orderNumber})을 찾을 수 없습니다.`,
+      );
     }
 
     const allowed = VALID_TRANSITIONS[order.status];
     if (!allowed.includes(newStatus)) {
-      throw new BadRequestException(
+      throw new AppException(
+        AppErrors.ORDER_STATUS_TRANSITION_INVALID,
         `${order.status} → ${newStatus} 전이는 허용되지 않습니다.`,
       );
     }

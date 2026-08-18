@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import type { Redis } from 'ioredis';
@@ -7,6 +7,8 @@ import { ProductOption } from '../products/entities/product-option.entity';
 import { AddCartItemDto } from './dto/add-cart-item.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
 import { CartResponse } from './cart.types';
+import { AppErrors } from '../common/errors/app-errors';
+import { AppException } from '../common/errors/app-exception';
 
 const CART_TTL_SECONDS = 60 * 60 * 24 * 14;
 
@@ -82,7 +84,8 @@ export class CartService {
     });
 
     if (!option) {
-      throw new NotFoundException(
+      throw new AppException(
+        AppErrors.PRODUCT_OPTION_NOT_FOUND,
         `상품 옵션(id: ${dto.productOptionId})을 찾을 수 없습니다.`,
       );
     }
@@ -103,7 +106,7 @@ export class CartService {
     const exists = await this.redis.hexists(key, String(productOptionId));
 
     if (!exists) {
-      throw new NotFoundException('장바구니에 없는 상품입니다.');
+      throw new AppException(AppErrors.CART_ITEM_NOT_FOUND);
     }
 
     await this.redis.hset(key, String(productOptionId), dto.quantity);
@@ -122,7 +125,7 @@ export class CartService {
     );
 
     if (removed === 0) {
-      throw new NotFoundException('장바구니에 없는 상품입니다.');
+      throw new AppException(AppErrors.CART_ITEM_NOT_FOUND);
     }
 
     return this.getCart(cartId);
