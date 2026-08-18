@@ -355,6 +355,14 @@ CREATE TABLE order_items (
 - **부수 발견**: `test:e2e`가 테스트 통과 후에도 종료되지 않는 문제 발견(Redis 클라이언트 커넥션이 `app.close()`로 안 닫힘) — CI에서 행(hang)을 방지하기 위해 `--forceExit` 플래그 추가.
 - **재검토 트리거**: Docker 기반 배포와의 차이로 인한 사고가 또 발생하면 → CI에 실제 Docker 빌드 단계 추가 검토. Redis 커넥션을 `OnModuleDestroy`로 정식 종료하는 방식으로 전환하면 `--forceExit` 제거 검토.
 
+### 28. Swagger/OpenAPI 문서화 도입
+
+- **배경**: API 설계 축에서 DTO+class-validator는 갖춰져 있었지만 자동화된 API 명세가 없어, CLAUDE.md의 수기 표만으로 산출물을 대신하고 있었음.
+- **비교한 대안**: (a) 별도 OpenAPI yaml/json 수동 작성 — 코드와 별도로 관리해야 해 실제 동작과 문서가 어긋날 위험. (b) `@nestjs/swagger` 데코레이터 방식.
+- **선택 근거**: (b). 코드가 곧 명세라 어긋날 위험이 낮고, 이미 있는 DTO 구조에 `@ApiProperty` 추가하는 수준의 낮은 비용.
+- **구현**: `main.ts`에 `SwaggerModule` 설정, `GET /docs`에서 Swagger UI 제공. 모든 DTO에 `@ApiProperty`, 모든 컨트롤러에 `@ApiTags`/`@ApiOperation` 추가. `X-Cart-Id`/`X-Admin-Token` 커스텀 헤더는 `DocumentBuilder.addApiKey()`로 보안 스킴 등록해 Swagger UI "Authorize" 버튼으로 테스트 가능. 배포 환경에도 별도 게이팅 없이 그대로 노출(민감 정보 없는 API 구조 문서라 포트폴리오 열람 목적에 부합).
+- **재검토 트리거**: API에 민감한 내부 정보가 노출되기 시작하면 → 환경변수로 프로덕션 노출 여부 게이팅 검토.
+
 ### 테스트 데이터
 
 - `categories`: 신발, 상의, 하의
