@@ -346,6 +346,15 @@ CREATE TABLE order_items (
 - **Idempotency-Key 공식 메커니즘 발견**: TossPayments 전체 POST API가 `Idempotency-Key` 헤더를 지원하며(15일 유효), 같은 키로 재요청 시 최초 응답을 그대로 반환해 중복 처리를 막아줌을 확인(2026-08-18, 공식 문서). 기존 PR(#29)의 confirm 멱등성 처리는 `ALREADY_PROCESSED_PAYMENT` 에러 코드 감지 방식뿐이었는데, 이 공식 헤더를 놓치고 있었음이 드러남. 이번에 confirm(`Idempotency-Key: confirm:{orderId}`)과 cancel(`Idempotency-Key: cancel:{paymentKey}`) 모두에 적용. 기존 에러 코드 감지는 보조 안전망으로 유지. 타임아웃·재시도·Idempotency-Key 로직은 `requestTossWithRetry()` 공통 헬퍼로 추출해 confirm/cancel이 공유.
 - **재검토 트리거**: 레거시(paymentKey 없는) PAID 주문이 다수 발생하면 → Toss 결제 조회 API(`GET /v1/payments/orders/{orderId}`)로 paymentKey를 소급 조회해 백필하는 스크립트 검토. 관리자가 취소 사유를 직접 입력해야 할 필요가 생기면 → `UpdateOrderStatusDto`에 `reason` 필드 추가 + 프론트 UI 확장 검토.
 
+### 27. GitHub Actions CI 도입 — typecheck/lint/unit/e2e 자동화
+
+- **배경**: 결정 26의 `payment_key` 컬럼을 `string | null` 유니온 타입으로 선언했다가 TypeORM이 컬럼 타입을 `Object`로 오인식해 Render 배포가 크래시 루프에 빠짐(PR #31 → 긴급 핫픽스 PR #32). 유닛테스트는 `DataSource`를 모킹하므로 이런 엔티티 메타데이터 오류를 원천적으로 못 잡음. 반면 이미 있던 `test/app.e2e-spec.ts`는 `AppModule`을 실제로 부팅(`app.init()`)하는 진짜 e2e 테스트라 이 버그를 그대로 잡아낼 수 있었는데, CI가 없어 커밋 전에 아무도 실행하지 않았음.
+- **비교한 대안**: (a) Docker 이미지 빌드까지 CI에 포함해 Render와 완전히 동일하게 검증 — 가장 확실하지만 지금 필요한 수준(엔티티/부팅 오류 조기 발견)을 넘어서는 과설계. (b) typecheck+lint+unit+e2e까지만.
+- **선택 근거**: (b). e2e 단계(`test/app.e2e-spec.ts`)가 오늘 사고의 근본 원인을 정확히 잡아내므로 목적에 충분.
+- **구현**: `.github/workflows/ci.yml` — `pull_request`/`push`(대상 `main`) 트리거, Postgres 16·Redis 7을 GitHub Actions `services`로 띄우고 `commerce-core-schema.sql`을 적재한 뒤 typecheck → lint → unit test → e2e test 순으로 실행. 로컬 재현 검증: `Order.paymentKey`를 일부러 다시 유니온 타입으로 되돌려 `npm run test:e2e` 실행 → 동일한 `DataTypeNotSupportedError`로 실패 확인, 원상 복구 후 재검증 통과 확인(2026-08-18).
+- **부수 발견**: `test:e2e`가 테스트 통과 후에도 종료되지 않는 문제 발견(Redis 클라이언트 커넥션이 `app.close()`로 안 닫힘) — CI에서 행(hang)을 방지하기 위해 `--forceExit` 플래그 추가.
+- **재검토 트리거**: Docker 기반 배포와의 차이로 인한 사고가 또 발생하면 → CI에 실제 Docker 빌드 단계 추가 검토. Redis 커넥션을 `OnModuleDestroy`로 정식 종료하는 방식으로 전환하면 `--forceExit` 제거 검토.
+
 ### 테스트 데이터
 
 - `categories`: 신발, 상의, 하의
