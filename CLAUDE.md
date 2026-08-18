@@ -327,6 +327,16 @@ CREATE TABLE order_items (
 - **구현**: `common/interceptors/logging.interceptor.ts`를 전역 등록(`main.ts`). 모든 요청에 `{METHOD} {URL} {상태코드} {소요시간}ms` 형식으로 성공/실패 모두 기록.
 - **재검토 트리거**: 로그 수집·분석 플랫폼(예: Datadog, CloudWatch)을 도입하는 시점 → JSON 구조화 로깅으로 전환 검토.
 
+### 25. TossPayments 승인 신뢰성 강화 → 타임아웃·재시도·멱등성·동시성 락
+
+- **배경**: `PaymentsService.confirm()`이 순수 `fetch()` 1회 호출뿐이라 타임아웃이 없고, 네트워크 실패·Toss 5xx에도 재시도가 없고, 동일 주문에 동시에 confirm 요청이 두 번 들어오면(더블클릭, 프론트 재시도) 둘 다 `order.status !== PENDING` 체크를 통과해 Toss confirm을 중복 호출할 수 있는 레이스가 있었음.
+- **타임아웃/재시도 기준**: TossPayments 공식 문서(docs.tosspayments.com/reference/error-codes)에 명시적 재시도 가이드가 없음을 확인(2026-08-18). `AbortController` 기반 10초 타임아웃 적용, 네트워크 에러/타임아웃과 5xx 응답에 한해 최대 2회 재시도(백오프 300ms, 900ms). 4xx는 멱등하지 않은 클라이언트 에러로 간주해 재시도하지 않음.
+- **멱등성**: Toss가 이미 승인된 결제 재요청 시 반환하는 공식 에러 코드 `ALREADY_PROCESSED_PAYMENT`(400)를 실패가 아닌 성공(멱등)으로 처리 — 우리 쪽 재시도나 클라이언트 재요청이 Toss 측에서 이미 처리된 결제와 마주쳐도 주문을 PAID로 정상 동기화.
+- **동시 confirm 레이스 방지 — 비교한 대안**: (a) 별도 `PROCESSING` 상태 컬럼/값 추가 후 원자적 업데이트로 선점 — 락을 오래 안 쥐어 확장성은 좋으나 스키마 변경(마이그레이션 도구 없음, Supabase SQL 수동 실행 필요)이 필요해 지금 규모엔 과함. (b) `orders.service.ts`의 `createOrder()`와 동일한 `pessimistic_write` 트랜잭션 락 재사용 — 새 스키마 없이 가능.
+- **선택 근거**: (b). 결정 2(재고 동시성 제어에 비관적 락 선택)와 같은 판단 기준 — 현재 트래픽 규모에서는 락 대기로 인한 지연보다 정확성이 우선. 다만 락을 쥔 채로 외부 API(Toss)를 호출하는 트레이드오프가 있음을 인지하고 채택.
+- **재검토 트리거**: 결제 동시 요청이 늘어나 락 대기가 체감되는 시점 → (a) 원자적 상태 컬럼 방식으로 전환 검토.
+- **테스트 범위**: 실제 DB 락 동시성 검증은 이미 `k6/order-concurrency.js`가 담당 중이라 중복하지 않음. `OrdersService`/`PaymentsService` 유닛테스트는 Repository/DataSource/Redis/`fetch`를 모킹해 비즈니스 로직(금액 계산, 재시도/멱등 분기, 에러 매핑, 상태 가드)만 검증 — 역할을 분리함.
+
 ### 테스트 데이터
 
 - `categories`: 신발, 상의, 하의
