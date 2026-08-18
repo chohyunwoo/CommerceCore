@@ -1,4 +1,5 @@
 import { Controller, Get, HttpStatus, Inject, Res } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type { Redis } from 'ioredis';
@@ -7,6 +8,7 @@ import { REDIS_CLIENT } from '../redis/redis.constants';
 
 type DependencyStatus = 'up' | 'down';
 
+@ApiTags('health')
 @Controller('health')
 export class HealthController {
   constructor(
@@ -14,6 +16,7 @@ export class HealthController {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
+  @ApiOperation({ summary: 'DB/Redis 연결 상태 확인 (인증 불필요)' })
   @Get()
   async check(@Res() res: Response) {
     const [dbResult, redisResult] = await Promise.allSettled([
