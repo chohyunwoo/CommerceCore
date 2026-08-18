@@ -224,6 +224,12 @@ Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TT
 | PATCH | `/admin/orders/:id/status` | 주문 상태 전이. body: `{ status }`. 유효하지 않은 전이 시 400 |
 | GET | `/admin/events` | SSE. `stock-update`/`order-update` 이벤트를 이름으로 구분해 하나의 연결로 푸시 |
 
+### 헬스체크 (Health) — 인증 불필요
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/health` | DB(`SELECT 1`)·Redis(`PING`) 연결 상태 확인. 응답: `{ status: 'ok'\|'degraded', db: 'up'\|'down', redis: 'up'\|'down', timestamp }`. 둘 다 정상이면 200, 하나라도 실패하면 503 |
+
 ---
 
 ## 확정된 스키마
@@ -304,6 +310,22 @@ CREATE TABLE order_items (
 - **선택 근거**: 카테고리 3개·상품 30개로 한정된 초기 규모에서는 관리자(본인)가 직접 데이터를 입력하므로 별도 매핑 계층이 불필요. 한글로 통일하면 프론트엔드에 그대로 노출 가능해 번역 로직이 필요 없음.
 - **재검토 트리거**: 국제화(i18n)가 필요해지는 시점 → 영어 코드 값 + 다국어 매핑 방식으로 전환 검토.
 - **기존 데이터 수정**: `UPDATE product_options SET color = '블랙' WHERE color = 'BLACK'; UPDATE product_options SET color = '화이트' WHERE color = 'WHITE';`
+
+### 23. 헬스체크 → DB/Redis 의존성 직접 확인 (`@nestjs/terminus` 미도입)
+
+- **배경**: 관측성 축이 비어 있던 것을 확인 — 앱이 살아있는지, DB/Redis 연결이 정상인지 확인할 방법이 응답 지연 관찰 외엔 없었음. Render 무료 티어는 15분 비활성 후 슬립되고 재기동에 30초 정도 걸림.
+- **비교한 대안**: (a) 단순 liveness(항상 200) — 프로세스 생존만 확인, DB/Redis 장애를 못 잡아 의미가 약함. (b) `@nestjs/terminus` 도입 — 표준적이지만 헬스체크 항목이 DB+Redis 둘뿐인 지금 규모엔 새 의존성이 과함.
+- **선택 근거**: 기존 TypeORM `DataSource`(`SELECT 1`)와 기존 Redis 클라이언트(`PING`)를 직접 사용해 의존성 상태를 확인. 새 패키지 추가 없이 구현 가능.
+- **구현**: `GET /health` (인증 불필요, `AdminGuard` 미적용) — 둘 다 정상이면 200 + `status: 'ok'`, 하나라도 실패하면 503 + `status: 'degraded'`.
+- **재검토 트리거**: 헬스체크 항목이 늘어나거나(외부 PG 연동 등) 여러 인스턴스로 확장되는 시점 → `@nestjs/terminus` 등 표준 라이브러리 전환 검토.
+
+### 24. 요청 로깅 → NestJS 기본 Logger (구조화 로깅 라이브러리 미도입)
+
+- **배경**: `backend/src` 전체에 `Logger` 사용이 0건이라 요청 단위 추적이 불가능했음.
+- **비교한 대안**: Winston/pino 등으로 JSON 구조화 로깅.
+- **선택 근거**: 로그 수집·분석 플랫폼이 없는 현재 단계에서는 텍스트 한 줄 로그로 충분. 새 의존성 없이 NestJS 기본 `Logger`로 구현 가능.
+- **구현**: `common/interceptors/logging.interceptor.ts`를 전역 등록(`main.ts`). 모든 요청에 `{METHOD} {URL} {상태코드} {소요시간}ms` 형식으로 성공/실패 모두 기록.
+- **재검토 트리거**: 로그 수집·분석 플랫폼(예: Datadog, CloudWatch)을 도입하는 시점 → JSON 구조화 로깅으로 전환 검토.
 
 ### 테스트 데이터
 
