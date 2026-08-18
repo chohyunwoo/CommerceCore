@@ -1,6 +1,9 @@
 -- ============================================================
 -- CommerceCore Schema + Seed Data
--- Supabase SQL Editor에서 전체 선택 후 실행하세요
+-- ⚠️ 스키마의 기준(source of truth)은 이제 backend/src/migrations/ 입니다.
+--    이 파일은 ERD Cloud 등으로 시각화하기 위한 참고용 스냅샷으로만 유지합니다.
+--    실제 스키마 변경은 `npm run migration:generate`로 생성하세요.
+-- Seed Data만 필요하면 아래 INSERT 문만 골라서 실행하세요.
 -- ============================================================
 
 -- 1. ENUM 타입

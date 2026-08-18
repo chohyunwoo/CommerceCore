@@ -59,8 +59,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Load schema into CI database
-        run: PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USERNAME -d $DB_DATABASE -f ../commerce-core-schema.sql
+      - name: Run database migrations
+        run: npm run migration:run
 
       - name: Type check
         run: npx tsc --noEmit
