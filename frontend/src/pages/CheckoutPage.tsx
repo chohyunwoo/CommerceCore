@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { loadTossPayments, ANONYMOUS } from '@tosspayments/tosspayments-sdk';
 import { createOrder } from '../api/orders';
 import { ApiError } from '../api/client';
+import { openPostcodeSearch } from '../lib/kakaoPostcode';
 import type { CartItem } from '../api/types';
 
 interface CheckoutLocationState {
@@ -37,6 +38,17 @@ export function CheckoutPage() {
 
   const { items } = state;
   const totalAmount = items.reduce((sum, item) => sum + item.lineTotal, 0);
+
+  async function handleSearchPostcode() {
+    try {
+      await openPostcodeSearch(({ postalCode: zonecode, baseAddress: road }) => {
+        setPostalCode(zonecode);
+        setBaseAddress(road);
+      });
+    } catch {
+      setError('우편번호 검색을 열지 못했습니다. 잠시 후 다시 시도해주세요.');
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -119,22 +131,33 @@ export function CheckoutPage() {
           <input
             className="form-input"
             type="text"
+            inputMode="numeric"
             required
+            maxLength={11}
+            placeholder="01012345678"
             value={buyerPhone}
-            onChange={(e) => setBuyerPhone(e.target.value)}
+            onChange={(e) => setBuyerPhone(e.target.value.replace(/\D/g, ''))}
           />
         </div>
         <div className="form-group">
           <label className="form-label">우편번호</label>
-          <input
-            className="form-input"
-            type="text"
-            required
-            maxLength={5}
-            placeholder="12345"
-            value={postalCode}
-            onChange={(e) => setPostalCode(e.target.value)}
-          />
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input
+              className="form-input"
+              type="text"
+              required
+              readOnly
+              placeholder="검색 버튼을 눌러주세요"
+              value={postalCode}
+            />
+            <button
+              type="button"
+              className="btn"
+              onClick={handleSearchPostcode}
+            >
+              우편번호 검색
+            </button>
+          </div>
         </div>
         <div className="form-group">
           <label className="form-label">기본주소</label>
@@ -142,8 +165,9 @@ export function CheckoutPage() {
             className="form-input"
             type="text"
             required
+            readOnly
+            placeholder="검색 버튼을 눌러주세요"
             value={baseAddress}
-            onChange={(e) => setBaseAddress(e.target.value)}
           />
         </div>
         <div className="form-group">
