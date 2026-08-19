@@ -3,11 +3,8 @@ import { Link, useParams } from 'react-router-dom';
 import { fetchProduct } from '../api/products';
 import { addCartItem } from '../api/cart';
 import { ApiError } from '../api/client';
+import { getProductImage } from '../lib/productImage';
 import type { ProductDetail } from '../api/types';
-
-function getProductImage(productId: number): string {
-  return `https://picsum.photos/seed/cc-${productId}/600/750`;
-}
 
 export function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -73,7 +70,7 @@ export function ProductDetailPage() {
 
       <div className="product-detail-grid">
         <div className="product-detail-image">
-          <img src={getProductImage(product.id)} alt={product.name} />
+          <img src={getProductImage(product)} alt={product.name} />
         </div>
 
         <div className="product-detail-info">

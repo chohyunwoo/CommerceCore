@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Not, IsNull, Repository } from 'typeorm';
 import { Product } from './entities/product.entity';
 import { AppErrors } from '../common/errors/app-errors';
 import { AppException } from '../common/errors/app-exception';
+import { cosineSimilarity } from './utils/cosine-similarity';
+import { ProductSearchResult } from './products.types';
 
 export interface PaginatedProducts {
   items: Product[];
@@ -11,6 +13,8 @@ export interface PaginatedProducts {
   page: number;
   totalPages: number;
 }
+
+const SEARCH_BY_IMAGE_LIMIT = 5;
 
 @Injectable()
 export class ProductsService {
@@ -49,5 +53,24 @@ export class ProductsService {
     }
 
     return product;
+  }
+
+  async searchByImage(embedding: number[]): Promise<ProductSearchResult[]> {
+    const products = await this.productRepository.find({
+      where: { imageEmbedding: Not(IsNull()) },
+    });
+
+    return products
+      .map((product) => ({
+        id: product.id,
+        categoryId: product.categoryId,
+        name: product.name,
+        description: product.description,
+        basePrice: product.basePrice,
+        imageUrl: product.imageUrl,
+        similarity: cosineSimilarity(embedding, product.imageEmbedding!),
+      }))
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, SEARCH_BY_IMAGE_LIMIT);
   }
 }

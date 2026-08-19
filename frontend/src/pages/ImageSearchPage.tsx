@@ -1,0 +1,112 @@
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { searchProductsByImage } from '../api/products';
+import { getImageEmbedding } from '../lib/imageEmbedding';
+import { getProductImage } from '../lib/productImage';
+import { ApiError } from '../api/client';
+import type { ProductSearchResult } from '../api/types';
+
+export function ImageSearchPage() {
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [results, setResults] = useState<ProductSearchResult[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleFileChange(selected: File | null) {
+    setFile(selected);
+    setResults(null);
+    setError(null);
+    setPreviewUrl(selected ? URL.createObjectURL(selected) : null);
+  }
+
+  async function handleSearch() {
+    if (!file) return;
+    setLoading(true);
+    setError(null);
+    setResults(null);
+
+    try {
+      setStatusMessage('브라우저에서 이미지 분석 중...');
+      const embedding = await getImageEmbedding(file);
+      setStatusMessage('유사한 상품 찾는 중...');
+      const found = await searchProductsByImage(embedding);
+      setResults(found);
+    } catch (err: unknown) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : '이미지 검색에 실패했습니다. 잠시 후 다시 시도해주세요.',
+      );
+    } finally {
+      setStatusMessage(null);
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section id="image-search">
+      <p className="detail-category">AI 이미지 검색</p>
+      <h1 className="detail-name" style={{ marginBottom: '8px' }}>
+        이미지로 비슷한 상품 찾기
+      </h1>
+      <p style={{ color: 'var(--text-sub)', fontSize: '13px', marginBottom: '32px' }}>
+        상품 사진을 올리면 브라우저에서 직접 분석해 가장 비슷한 상품을 찾아드립니다.
+        (첫 사용 시 모델을 내려받느라 다소 시간이 걸릴 수 있습니다.)
+      </p>
+
+      <div className="image-search-upload">
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(e) => handleFileChange(e.target.files?.[0] ?? null)}
+        />
+        {previewUrl && (
+          <div className="image-search-preview">
+            <img src={previewUrl} alt="업로드한 이미지 미리보기" />
+          </div>
+        )}
+        <button
+          type="button"
+          className="btn btn-filled"
+          disabled={!file || loading}
+          onClick={handleSearch}
+        >
+          {loading ? statusMessage ?? '검색 중...' : '유사 상품 찾기'}
+        </button>
+      </div>
+
+      {error && <p className="error">{error}</p>}
+
+      {results && results.length === 0 && (
+        <p style={{ color: 'var(--text-sub)', fontSize: '13px', marginTop: '24px' }}>
+          비교할 수 있는 상품 이미지가 없습니다.
+        </p>
+      )}
+
+      {results && results.length > 0 && (
+        <ul className="product-grid" style={{ marginTop: '32px' }}>
+          {results.map((product) => (
+            <li key={product.id} className="product-card">
+              <Link to={`/products/${product.id}`}>
+                <div className="product-thumb">
+                  <img
+                    src={getProductImage(product)}
+                    alt={product.name}
+                    loading="lazy"
+                  />
+                </div>
+                <p className="product-name">{product.name}</p>
+                <p className="product-price">{product.basePrice.toLocaleString()}원</p>
+                <p className="similarity-badge">
+                  유사도 {(product.similarity * 100).toFixed(1)}%
+                </p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
