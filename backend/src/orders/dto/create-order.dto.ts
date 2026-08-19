@@ -3,7 +3,9 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsEmail,
+  IsOptional,
   IsString,
+  Matches,
   ValidateNested,
 } from 'class-validator';
 import { CreateOrderItemDto } from './create-order-item.dto';
@@ -24,9 +26,18 @@ export class CreateOrderDto {
   @IsString()
   buyerPhone: string;
 
-  @ApiProperty({ example: '서울시 어딘가 123' })
+  @ApiProperty({ example: '06236', description: '우편번호 (5자리 숫자)' })
+  @Matches(/^\d{5}$/, { message: '우편번호는 5자리 숫자여야 합니다.' })
+  postalCode: string;
+
+  @ApiProperty({ example: '서울시 강남구 테헤란로 123' })
   @IsString()
-  buyerAddress: string;
+  baseAddress: string;
+
+  @ApiProperty({ example: '101동 202호', required: false })
+  @IsOptional()
+  @IsString()
+  detailAddress?: string;
 
   @ApiProperty({ type: [CreateOrderItemDto] })
   @ArrayNotEmpty()

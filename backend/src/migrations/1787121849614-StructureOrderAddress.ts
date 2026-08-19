@@ -6,9 +6,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * 신규 컬럼은 nullable로 추가하고, 신규 주문부터는 3개 필드와 buyer_address(합친 문자열)를
  * 함께 저장한다(애플리케이션 레벨에서 처리, orders.service.ts 참고).
  */
-export class StructureOrderAddress1787121849614
-  implements MigrationInterface
-{
+export class StructureOrderAddress1787121849614 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
       `ALTER TABLE orders ADD COLUMN IF NOT EXISTS postal_code VARCHAR(10);`,

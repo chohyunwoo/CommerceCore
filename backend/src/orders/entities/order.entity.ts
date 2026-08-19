@@ -41,7 +41,12 @@ export class Order {
   @Column({ name: 'postal_code', type: 'varchar', length: 10, nullable: true })
   postalCode: string | null;
 
-  @Column({ name: 'base_address', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'base_address',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   baseAddress: string | null;
 
   @Column({

@@ -34,6 +34,9 @@ export interface OrderLookupResponse {
   buyerEmail: string;
   buyerPhone: string;
   buyerAddress: string;
+  postalCode: string | null;
+  baseAddress: string | null;
+  detailAddress: string | null;
   totalAmount: number;
   createdAt: Date;
   items: OrderLookupItem[];

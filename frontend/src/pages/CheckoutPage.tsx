@@ -18,7 +18,9 @@ export function CheckoutPage() {
   const [buyerEmail, setBuyerEmail] = useState('');
   const [buyerName, setBuyerName] = useState('');
   const [buyerPhone, setBuyerPhone] = useState('');
-  const [buyerAddress, setBuyerAddress] = useState('');
+  const [postalCode, setPostalCode] = useState('');
+  const [baseAddress, setBaseAddress] = useState('');
+  const [detailAddress, setDetailAddress] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +45,14 @@ export function CheckoutPage() {
 
     try {
       const result = await createOrder(
-        { buyerEmail, buyerName, buyerPhone, buyerAddress },
+        {
+          buyerEmail,
+          buyerName,
+          buyerPhone,
+          postalCode,
+          baseAddress,
+          detailAddress: detailAddress || undefined,
+        },
         items,
       );
 
@@ -116,13 +125,34 @@ export function CheckoutPage() {
           />
         </div>
         <div className="form-group">
-          <label className="form-label">배송지</label>
+          <label className="form-label">우편번호</label>
           <input
             className="form-input"
             type="text"
             required
-            value={buyerAddress}
-            onChange={(e) => setBuyerAddress(e.target.value)}
+            maxLength={5}
+            placeholder="12345"
+            value={postalCode}
+            onChange={(e) => setPostalCode(e.target.value)}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">기본주소</label>
+          <input
+            className="form-input"
+            type="text"
+            required
+            value={baseAddress}
+            onChange={(e) => setBaseAddress(e.target.value)}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">상세주소 (선택)</label>
+          <input
+            className="form-input"
+            type="text"
+            value={detailAddress}
+            onChange={(e) => setDetailAddress(e.target.value)}
           />
         </div>
 
