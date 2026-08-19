@@ -34,8 +34,23 @@ export class Order {
   @Column({ name: 'buyer_phone', length: 30 })
   buyerPhone: string;
 
+  // 하위호환/표시용 — 신규 주문은 base_address + detail_address를 합쳐 자동 채워진다 (이슈 #52).
   @Column({ name: 'buyer_address', length: 500 })
   buyerAddress: string;
+
+  @Column({ name: 'postal_code', type: 'varchar', length: 10, nullable: true })
+  postalCode: string | null;
+
+  @Column({ name: 'base_address', type: 'varchar', length: 255, nullable: true })
+  baseAddress: string | null;
+
+  @Column({
+    name: 'detail_address',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  detailAddress: string | null;
 
   @Column({ name: 'total_amount', type: 'int' })
   totalAmount: number;
