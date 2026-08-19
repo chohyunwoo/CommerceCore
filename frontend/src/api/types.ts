@@ -19,8 +19,19 @@ export interface Product {
   name: string;
   description: string | null;
   basePrice: number;
+  imageUrl: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProductSearchResult {
+  id: number;
+  categoryId: number;
+  name: string;
+  description: string | null;
+  basePrice: number;
+  imageUrl: string | null;
+  similarity: number;
 }
 
 export interface ProductDetail extends Product {

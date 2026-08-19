@@ -2,14 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchProducts } from '../api/products';
 import { ApiError } from '../api/client';
+import { getProductImage } from '../lib/productImage';
 import type { Product } from '../api/types';
 
 const CATEGORIES = ['신발', '상의', '하의'];
 const LIMIT = 12;
-
-function getProductImage(productId: number): string {
-  return `https://picsum.photos/seed/cc-${productId}/600/750`;
-}
 
 export function ProductListPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -81,7 +78,7 @@ export function ProductListPage() {
             <Link to={`/products/${product.id}`}>
               <div className="product-thumb">
                 <img
-                  src={getProductImage(product.id)}
+                  src={getProductImage(product)}
                   alt={product.name}
                   loading="lazy"
                 />

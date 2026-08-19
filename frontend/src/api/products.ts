@@ -1,5 +1,9 @@
-import { apiGet } from './client';
-import type { PaginatedProducts, ProductDetail } from './types';
+import { apiGet, apiPost } from './client';
+import type {
+  PaginatedProducts,
+  ProductDetail,
+  ProductSearchResult,
+} from './types';
 
 export function fetchProducts(
   category?: string,
@@ -15,4 +19,12 @@ export function fetchProducts(
 
 export function fetchProduct(id: number): Promise<ProductDetail> {
   return apiGet<ProductDetail>(`/products/${id}`);
+}
+
+export function searchProductsByImage(
+  embedding: number[],
+): Promise<ProductSearchResult[]> {
+  return apiPost<ProductSearchResult[]>('/products/search-by-image', {
+    embedding,
+  });
 }
