@@ -1,6 +1,7 @@
 import { AdminService } from './admin.service';
 import { Order } from '../orders/entities/order.entity';
 import { OrderStatus } from '../orders/entities/order-status.enum';
+import { CreateProductDto } from './dto/create-product.dto';
 import { AppException } from '../common/errors/app-exception';
 import { AppErrors, AppErrorDefinition } from '../common/errors/app-errors';
 
@@ -28,6 +29,7 @@ function createAdminService(order: Partial<Order> | null) {
   const manager = {
     findOne: jest.fn(() => Promise.resolve(orderRecord)),
     save: jest.fn((arg: unknown) => Promise.resolve(arg)),
+    create: jest.fn((_entity: unknown, arg: unknown) => arg),
   };
   const dataSource = {
     transaction: jest.fn((cb: (manager: unknown) => Promise<unknown>) =>
@@ -36,16 +38,41 @@ function createAdminService(order: Partial<Order> | null) {
   };
   const domainEvents = { emitOrderUpdate: jest.fn() };
   const paymentsService = { cancel: jest.fn().mockResolvedValue(undefined) };
+  const productOptionRepository = { findOne: jest.fn() };
+  const categoryRepository = { find: jest.fn(), findOne: jest.fn() };
 
   const service = new AdminService(
+    productOptionRepository as never,
     {} as never,
-    {} as never,
+    categoryRepository as never,
     dataSource as never,
     domainEvents as never,
     paymentsService as never,
   );
 
-  return { service, orderRecord, manager, domainEvents, paymentsService };
+  return {
+    service,
+    orderRecord,
+    manager,
+    domainEvents,
+    paymentsService,
+    productOptionRepository,
+    categoryRepository,
+  };
+}
+
+function buildCreateProductDto(
+  overrides: Partial<CreateProductDto> = {},
+): CreateProductDto {
+  return {
+    categoryId: 1,
+    name: '에어맥스 90',
+    basePrice: 139000,
+    imageUrl: 'https://example.com/products/airmax90.jpg',
+    imageEmbedding: [0.1, 0.2, 0.3],
+    options: [{ size: '270', color: '블랙', stock: 10, sku: 'SHOE-001' }],
+    ...overrides,
+  };
 }
 
 describe('AdminService.updateOrderStatus', () => {
@@ -147,5 +174,93 @@ describe('AdminService.updateOrderStatus', () => {
 
     expect(paymentsService.cancel).not.toHaveBeenCalled();
     expect(manager.save).not.toHaveBeenCalled();
+  });
+});
+
+describe('AdminService.getCategories', () => {
+  it('카테고리를 id 목록 형태로 반환한다', async () => {
+    const { service, categoryRepository } = createAdminService(null);
+    categoryRepository.find.mockResolvedValue([
+      { id: 1, name: '신발' },
+      { id: 2, name: '상의' },
+    ]);
+
+    const result = await service.getCategories();
+
+    expect(result).toEqual([
+      { id: 1, name: '신발' },
+      { id: 2, name: '상의' },
+    ]);
+  });
+});
+
+describe('AdminService.createProduct', () => {
+  it('존재하지 않는 카테고리면 CATEGORY_NOT_FOUND를 던진다', async () => {
+    const { service, categoryRepository } = createAdminService(null);
+    categoryRepository.findOne.mockResolvedValue(null);
+
+    await expectAppError(
+      service.createProduct(buildCreateProductDto()),
+      AppErrors.CATEGORY_NOT_FOUND,
+    );
+  });
+
+  it('요청 안에 중복 SKU가 있으면 SKU_ALREADY_EXISTS를 던진다', async () => {
+    const { service, categoryRepository } = createAdminService(null);
+    categoryRepository.findOne.mockResolvedValue({ id: 1, name: '신발' });
+
+    await expectAppError(
+      service.createProduct(
+        buildCreateProductDto({
+          options: [
+            { size: '270', color: '블랙', stock: 10, sku: 'SHOE-001' },
+            { size: '280', color: '블랙', stock: 5, sku: 'SHOE-001' },
+          ],
+        }),
+      ),
+      AppErrors.SKU_ALREADY_EXISTS,
+    );
+  });
+
+  it('DB에 이미 존재하는 SKU면 SKU_ALREADY_EXISTS를 던진다', async () => {
+    const { service, categoryRepository, productOptionRepository } =
+      createAdminService(null);
+    categoryRepository.findOne.mockResolvedValue({ id: 1, name: '신발' });
+    productOptionRepository.findOne.mockResolvedValue({
+      id: 99,
+      sku: 'SHOE-001',
+    });
+
+    await expectAppError(
+      service.createProduct(buildCreateProductDto()),
+      AppErrors.SKU_ALREADY_EXISTS,
+    );
+  });
+
+  it('정상 요청이면 상품과 옵션을 생성해 반환한다', async () => {
+    const { service, categoryRepository, productOptionRepository, manager } =
+      createAdminService(null);
+    categoryRepository.findOne.mockResolvedValue({ id: 1, name: '신발' });
+    productOptionRepository.findOne.mockResolvedValue(null);
+    manager.save.mockImplementation((arg: unknown) => {
+      if (Array.isArray(arg)) {
+        const options = arg as Record<string, unknown>[];
+        return Promise.resolve(
+          options.map((option, index) => ({ id: index + 1, ...option })),
+        );
+      }
+      return Promise.resolve({ id: 1, ...(arg as Record<string, unknown>) });
+    });
+
+    const result = await service.createProduct(buildCreateProductDto());
+
+    expect(result.id).toBe(1);
+    expect(result.name).toBe('에어맥스 90');
+    expect(result.options).toHaveLength(1);
+    expect(result.options[0]).toMatchObject({
+      productId: 1,
+      sku: 'SHOE-001',
+    });
+    expect(result.category).toEqual({ id: 1, name: '신발' });
   });
 });

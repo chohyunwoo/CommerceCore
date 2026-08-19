@@ -13,3 +13,8 @@ export interface RecentOrderItem {
   totalAmount: number;
   createdAt: Date;
 }
+
+export interface CategoryItem {
+  id: number;
+  name: string;
+}

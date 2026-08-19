@@ -2,18 +2,33 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   MessageEvent,
   Param,
   Patch,
+  Post,
   Sse,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
 import { map, Observable } from 'rxjs';
 import { AdminService } from './admin.service';
 import { DomainEventsService } from '../common/events/domain-events.service';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import { CreateProductDto } from './dto/create-product.dto';
 import { AdminGuard } from '../common/guards/admin.guard';
+import { SupabaseStorageService } from './supabase-storage.service';
+import { AppErrors } from '../common/errors/app-errors';
+import { AppException } from '../common/errors/app-exception';
 
 @ApiTags('admin')
 @ApiSecurity('admin-token')
@@ -23,7 +38,44 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly domainEvents: DomainEventsService,
+    private readonly supabaseStorageService: SupabaseStorageService,
   ) {}
+
+  @ApiOperation({ summary: '카테고리 목록 (상품 등록 폼용)' })
+  @Get('categories')
+  getCategories() {
+    return this.adminService.getCategories();
+  }
+
+  @ApiOperation({ summary: '상품 등록 (카테고리 + 최소 1개 옵션 포함)' })
+  @Post('products')
+  createProduct(@Body() dto: CreateProductDto) {
+    return this.adminService.createProduct(dto);
+  }
+
+  @ApiOperation({
+    summary:
+      '상품 이미지 업로드 (Supabase Storage) — 업로드된 public URL을 상품 등록 시 imageUrl로 사용',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @Post('products/upload-image')
+  @HttpCode(200)
+  @UseInterceptors(
+    FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }),
+  )
+  async uploadProductImage(@UploadedFile() file?: Express.Multer.File) {
+    if (!file) {
+      throw new AppException(AppErrors.INVALID_IMAGE_FILE);
+    }
+    const url = await this.supabaseStorageService.uploadImage(file);
+    return { url };
+  }
 
   @ApiOperation({ summary: '전체 상품 옵션의 현재 재고 목록' })
   @Get('stock-overview')
