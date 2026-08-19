@@ -67,7 +67,12 @@ export function OrderLookupPage() {
           <div className="lookup-info">
             <p>구매자: {order.buyerName} ({order.buyerEmail})</p>
             <p>연락처: {order.buyerPhone}</p>
-            <p>배송지: {order.buyerAddress}</p>
+            <p>
+              배송지:{' '}
+              {order.postalCode
+                ? `[${order.postalCode}] ${order.baseAddress ?? ''} ${order.detailAddress ?? ''}`.trim()
+                : order.buyerAddress}
+            </p>
           </div>
 
           <ul className="form-summary">

@@ -21,7 +21,9 @@ export interface BuyerInfo {
   buyerEmail: string;
   buyerName: string;
   buyerPhone: string;
-  buyerAddress: string;
+  postalCode: string;
+  baseAddress: string;
+  detailAddress?: string;
 }
 
 export function createOrder(

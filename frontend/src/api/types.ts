@@ -108,6 +108,9 @@ export interface OrderLookupResult {
   buyerEmail: string;
   buyerPhone: string;
   buyerAddress: string;
+  postalCode: string | null;
+  baseAddress: string | null;
+  detailAddress: string | null;
   totalAmount: number;
   createdAt: string;
   items: OrderLookupItem[];

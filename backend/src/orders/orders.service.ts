@@ -144,6 +144,10 @@ export class OrdersService {
         await manager.save(options);
 
         const orderNumber = await this.generateUniqueOrderNumber(manager);
+        // buyer_address는 하위호환/표시용 — base_address + detail_address를 합쳐 채운다 (이슈 #52).
+        const buyerAddress = [dto.baseAddress, dto.detailAddress]
+          .filter(Boolean)
+          .join(' ');
         const savedOrder = await manager.save(
           manager.create(Order, {
             orderNumber,
@@ -151,7 +155,10 @@ export class OrdersService {
             buyerEmail: dto.buyerEmail,
             buyerName: dto.buyerName,
             buyerPhone: dto.buyerPhone,
-            buyerAddress: dto.buyerAddress,
+            buyerAddress,
+            postalCode: dto.postalCode,
+            baseAddress: dto.baseAddress,
+            detailAddress: dto.detailAddress ?? null,
             totalAmount,
           }),
         );
@@ -235,6 +242,9 @@ export class OrdersService {
       buyerEmail: order.buyerEmail,
       buyerPhone: order.buyerPhone,
       buyerAddress: order.buyerAddress,
+      postalCode: order.postalCode,
+      baseAddress: order.baseAddress,
+      detailAddress: order.detailAddress,
       totalAmount: order.totalAmount,
       createdAt: order.createdAt,
       items: items.map((item) => ({
