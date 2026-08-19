@@ -187,8 +187,9 @@ NCP VM 대신 무료 배포 조합(Render + Supabase + Upstash + Cloudflare Page
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/products?category=` | 카테고리별 상품 목록 조회 |
+| GET | `/products?category=&page=&limit=` | 카테고리별 상품 목록 조회 (페이지네이션) |
 | GET | `/products/:id` | 상품 상세 + 옵션(사이즈/색상별 재고) 조회 |
+| POST | `/products/search-by-image` | 이미지 기반 상품 시각적 유사도 검색 (결정 32). Request: `{ embedding: number[] }`(클라이언트에서 CLIP으로 계산). Response: 코사인 유사도 상위 5개(`MIN_SIMILARITY=0.5` 미만 제외) |
 
 ### 장바구니 (Cart)
 
