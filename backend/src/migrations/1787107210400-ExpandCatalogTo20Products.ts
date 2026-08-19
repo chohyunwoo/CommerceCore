@@ -196,6 +196,16 @@ const SEED_PRODUCTS: SeedProduct[] = [
 
 export class ExpandCatalogTo20Products1787107210400 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // categories(신발/상의/하의)는 프로젝트 초기에 수동 SQL로 넣은 데이터라 어떤
+    // 마이그레이션에도 없었음 — CI 등 완전히 빈 DB에는 존재하지 않아 여기서 멱등하게 채운다.
+    await queryRunner.query(`
+      INSERT INTO categories (name)
+      SELECT name FROM (VALUES ('신발'), ('상의'), ('하의')) AS seed(name)
+      WHERE NOT EXISTS (
+        SELECT 1 FROM categories WHERE categories.name = seed.name
+      );
+    `);
+
     for (const product of SEED_PRODUCTS) {
       const existing = (await queryRunner.query(
         `SELECT 1 FROM products WHERE name = $1 LIMIT 1;`,
