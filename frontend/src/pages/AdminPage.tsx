@@ -1,10 +1,14 @@
 import { useState } from 'react';
 import { AdminDashboardPage } from './AdminDashboardPage';
+import { AdminProductForm } from './AdminProductForm';
+
+type AdminTab = 'dashboard' | 'products';
 
 export function AdminPage() {
   const [token, setToken] = useState(() => localStorage.getItem('adminToken') ?? '');
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<AdminTab>('dashboard');
 
   function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -45,5 +49,29 @@ export function AdminPage() {
     );
   }
 
-  return <AdminDashboardPage token={token} onAuthError={handleAuthError} />;
+  return (
+    <div>
+      <div className="admin-tabs">
+        <button
+          type="button"
+          className={tab === 'dashboard' ? 'active' : ''}
+          onClick={() => setTab('dashboard')}
+        >
+          대시보드
+        </button>
+        <button
+          type="button"
+          className={tab === 'products' ? 'active' : ''}
+          onClick={() => setTab('products')}
+        >
+          상품 등록
+        </button>
+      </div>
+      {tab === 'dashboard' ? (
+        <AdminDashboardPage token={token} onAuthError={handleAuthError} />
+      ) : (
+        <AdminProductForm onAuthError={handleAuthError} />
+      )}
+    </div>
+  );
 }

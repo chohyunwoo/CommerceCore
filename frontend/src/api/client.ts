@@ -46,6 +46,19 @@ export async function apiPost<T>(
   return handleResponse<T>(response);
 }
 
+export async function apiPostForm<T>(
+  path: string,
+  formData: FormData,
+  headers?: Record<string, string>,
+): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+  return handleResponse<T>(response);
+}
+
 export async function apiPatch<T>(
   path: string,
   body: unknown,
