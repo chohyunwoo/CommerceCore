@@ -197,10 +197,16 @@ const SEED_PRODUCTS: SeedProduct[] = [
 export class ExpandCatalogTo20Products1787107210400 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     for (const product of SEED_PRODUCTS) {
+      const existing = (await queryRunner.query(
+        `SELECT 1 FROM products WHERE name = $1 LIMIT 1;`,
+        [product.name],
+      )) as unknown[];
+
+      if (existing.length > 0) continue; // 이미 존재 — 건너뜀 (멱등)
+
       const inserted = (await queryRunner.query(
         `INSERT INTO products (category_id, name, base_price, image_url)
-         SELECT (SELECT id FROM categories WHERE name = $1), $2, $3, $4
-         WHERE NOT EXISTS (SELECT 1 FROM products WHERE name = $2)
+         VALUES ((SELECT id FROM categories WHERE name = $1), $2, $3, $4)
          RETURNING id;`,
         [
           product.categoryName,
@@ -209,8 +215,6 @@ export class ExpandCatalogTo20Products1787107210400 implements MigrationInterfac
           product.imageUrl,
         ],
       )) as Array<{ id: number }>;
-
-      if (inserted.length === 0) continue; // 이미 존재 — 건너뜀 (멱등)
 
       const productId = inserted[0].id;
       for (const option of product.options) {
