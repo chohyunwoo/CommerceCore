@@ -48,4 +48,52 @@ describe('CreateOrderDto', () => {
     const errors = await validate(dto);
     expect(errors.some((e) => e.property === 'baseAddress')).toBe(true);
   });
+
+  it('normalizes a hyphen-less 010 phone number to 010-XXXX-XXXX', async () => {
+    const dto = plainToInstance(
+      CreateOrderDto,
+      buildPayload({ buyerPhone: '01012345678' }),
+    );
+    const errors = await validate(dto);
+    expect(errors).toHaveLength(0);
+    expect(dto.buyerPhone).toBe('010-1234-5678');
+  });
+
+  it('normalizes a 10-digit legacy carrier number (3-3-4)', async () => {
+    const dto = plainToInstance(
+      CreateOrderDto,
+      buildPayload({ buyerPhone: '011 234 5678' }),
+    );
+    const errors = await validate(dto);
+    expect(errors).toHaveLength(0);
+    expect(dto.buyerPhone).toBe('011-234-5678');
+  });
+
+  it('keeps an already-hyphenated phone number unchanged', async () => {
+    const dto = plainToInstance(
+      CreateOrderDto,
+      buildPayload({ buyerPhone: '010-1234-5678' }),
+    );
+    const errors = await validate(dto);
+    expect(errors).toHaveLength(0);
+    expect(dto.buyerPhone).toBe('010-1234-5678');
+  });
+
+  it('rejects a phone number with an invalid prefix', async () => {
+    const dto = plainToInstance(
+      CreateOrderDto,
+      buildPayload({ buyerPhone: '02012345678' }),
+    );
+    const errors = await validate(dto);
+    expect(errors.some((e) => e.property === 'buyerPhone')).toBe(true);
+  });
+
+  it('rejects a phone number that is too short to be valid', async () => {
+    const dto = plainToInstance(
+      CreateOrderDto,
+      buildPayload({ buyerPhone: '123' }),
+    );
+    const errors = await validate(dto);
+    expect(errors.some((e) => e.property === 'buyerPhone')).toBe(true);
+  });
 });
