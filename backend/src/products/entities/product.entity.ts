@@ -32,6 +32,12 @@ export class Product {
   @Column({ name: 'base_price', type: 'int' })
   basePrice: number;
 
+  @Column({ name: 'image_url', type: 'varchar', length: 500, nullable: true })
+  imageUrl: string | null;
+
+  @Column({ name: 'image_embedding', type: 'jsonb', nullable: true })
+  imageEmbedding: number[] | null;
+
   @OneToMany(() => ProductOption, (option) => option.product)
   options: ProductOption[];
 
