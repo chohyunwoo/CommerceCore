@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Post,
@@ -48,6 +49,7 @@ export class ProductsController {
       '이미지 기반 상품 시각적 유사도 검색 (임베딩은 클라이언트에서 계산해 전달)',
   })
   @Post('search-by-image')
+  @HttpCode(200)
   searchByImage(@Body() dto: SearchByImageDto) {
     return this.productsService.searchByImage(dto.embedding);
   }
