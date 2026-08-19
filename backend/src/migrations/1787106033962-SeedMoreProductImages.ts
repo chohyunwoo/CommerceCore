@@ -7,9 +7,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * 5개 중 2개만 채워졌던 것을 확인(2026-08-19)해 추가한다.
  * 기존과 동일하게 image_url이 비어있을 때만 채우는 멱등 UPDATE.
  */
-export class SeedMoreProductImages1787106033962
-  implements MigrationInterface
-{
+export class SeedMoreProductImages1787106033962 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     const seedImages: Array<[string, string]> = [
       [
