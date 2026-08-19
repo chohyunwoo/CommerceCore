@@ -12,14 +12,25 @@ describe('ProductsService.searchByImage', () => {
   it('ranks products by cosine similarity, most similar first', async () => {
     const service = createService([
       { id: 1, name: 'A', imageEmbedding: [1, 0] },
-      { id: 2, name: 'B', imageEmbedding: [0, 1] },
+      { id: 2, name: 'B', imageEmbedding: [0.95, 0.05] },
       { id: 3, name: 'C', imageEmbedding: [0.9, 0.1] },
     ]);
 
     const results = await service.searchByImage([1, 0]);
 
-    expect(results.map((r) => r.id)).toEqual([1, 3, 2]);
+    expect(results.map((r) => r.id)).toEqual([1, 2, 3]);
     expect(results[0].similarity).toBeCloseTo(1);
+  });
+
+  it('excludes products below the minimum similarity threshold', async () => {
+    const service = createService([
+      { id: 1, name: 'A', imageEmbedding: [1, 0] },
+      { id: 2, name: 'B (orthogonal, unrelated)', imageEmbedding: [0, 1] },
+    ]);
+
+    const results = await service.searchByImage([1, 0]);
+
+    expect(results.map((r) => r.id)).toEqual([1]);
   });
 
   it('does not leak the raw embedding array in the response shape', async () => {
