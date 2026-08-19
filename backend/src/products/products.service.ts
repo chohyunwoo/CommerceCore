@@ -15,6 +15,10 @@ export interface PaginatedProducts {
 }
 
 const SEARCH_BY_IMAGE_LIMIT = 5;
+// CLIP 이미지 임베딩끼리는 서로 무관한 사진도 코사인 유사도가 0.5~0.7대로 뭉치는 경향이 있어
+// (예: 신발과 조거 팬츠가 0.6대로 나오는 경우) 이 값 하나로 카테고리를 깔끔하게 갈라내진 못한다.
+// 다만 명백히 무관한 항목(0.5 미만)은 걸러내는 최소한의 안전장치로 둔다.
+const MIN_SIMILARITY = 0.5;
 
 @Injectable()
 export class ProductsService {
@@ -70,6 +74,7 @@ export class ProductsService {
         imageUrl: product.imageUrl,
         similarity: cosineSimilarity(embedding, product.imageEmbedding!),
       }))
+      .filter((result) => result.similarity >= MIN_SIMILARITY)
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, SEARCH_BY_IMAGE_LIMIT);
   }
