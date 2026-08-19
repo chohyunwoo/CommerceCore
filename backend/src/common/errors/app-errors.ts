@@ -70,4 +70,24 @@ export const AppErrors = {
     code: 'ADMIN_AUTH_REQUIRED',
     message: '관리자 인증이 필요합니다.',
   },
+  CATEGORY_NOT_FOUND: {
+    status: 404,
+    code: 'CATEGORY_NOT_FOUND',
+    message: '카테고리를 찾을 수 없습니다.',
+  },
+  SKU_ALREADY_EXISTS: {
+    status: 409,
+    code: 'SKU_ALREADY_EXISTS',
+    message: '이미 존재하는 SKU입니다.',
+  },
+  INVALID_IMAGE_FILE: {
+    status: 400,
+    code: 'INVALID_IMAGE_FILE',
+    message: '이미지 파일(JPEG/PNG/WEBP)만 업로드할 수 있습니다.',
+  },
+  IMAGE_UPLOAD_FAILED: {
+    status: 500,
+    code: 'IMAGE_UPLOAD_FAILED',
+    message: '이미지 업로드에 실패했습니다.',
+  },
 } as const satisfies Record<string, AppErrorDefinition>;

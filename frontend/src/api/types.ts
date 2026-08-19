@@ -131,3 +131,29 @@ export interface RecentOrderItem {
   totalAmount: number;
   createdAt: string;
 }
+
+export interface CategoryItem {
+  id: number;
+  name: string;
+}
+
+export interface CreateProductOptionPayload {
+  size: string;
+  color: string;
+  stock: number;
+  sku: string;
+}
+
+export interface CreateProductPayload {
+  categoryId: number;
+  name: string;
+  description?: string;
+  basePrice: number;
+  imageUrl: string;
+  imageEmbedding: number[];
+  options: CreateProductOptionPayload[];
+}
+
+export interface UploadImageResult {
+  url: string;
+}

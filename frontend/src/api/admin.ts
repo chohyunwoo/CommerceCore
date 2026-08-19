@@ -1,5 +1,12 @@
-import { apiGet, apiPatch } from './client';
-import type { RecentOrderItem, StockOverviewItem } from './types';
+import { apiGet, apiPatch, apiPost, apiPostForm } from './client';
+import type {
+  CategoryItem,
+  CreateProductPayload,
+  Product,
+  RecentOrderItem,
+  StockOverviewItem,
+  UploadImageResult,
+} from './types';
 
 export function getAdminToken(): string {
   return localStorage.getItem('adminToken') ?? '';
@@ -22,4 +29,22 @@ export function updateOrderStatus(
   status: string,
 ): Promise<RecentOrderItem> {
   return apiPatch<RecentOrderItem>(`/admin/orders/${orderNumber}/status`, { status }, adminHeaders());
+}
+
+export function fetchCategories(): Promise<CategoryItem[]> {
+  return apiGet<CategoryItem[]>('/admin/categories', adminHeaders());
+}
+
+export function uploadProductImage(file: File): Promise<UploadImageResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return apiPostForm<UploadImageResult>(
+    '/admin/products/upload-image',
+    formData,
+    adminHeaders(),
+  );
+}
+
+export function createProduct(payload: CreateProductPayload): Promise<Product> {
+  return apiPost<Product>('/admin/products', payload, adminHeaders());
 }
