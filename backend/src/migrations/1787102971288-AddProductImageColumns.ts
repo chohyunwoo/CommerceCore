@@ -6,9 +6,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * 여기서는 컬럼만 추가한다. image_url은 로컬/데모용 테스트 데이터 5개에 한해
  * 이름으로 매칭해 채워 넣는다(이미 값이 있으면 덮어쓰지 않음 — 결정 22의 데이터 백필 패턴과 동일).
  */
-export class AddProductImageColumns1787102971288
-  implements MigrationInterface
-{
+export class AddProductImageColumns1787102971288 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
       `ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url VARCHAR(500);`,
