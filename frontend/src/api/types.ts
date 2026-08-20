@@ -157,6 +157,17 @@ export interface CategoryItem {
   name: string;
 }
 
+export interface CurrentUser {
+  id: number;
+  email: string;
+  name: string;
+}
+
+export interface AuthResult {
+  token: string;
+  user: CurrentUser;
+}
+
 export interface CreateProductOptionPayload {
   size: string;
   color: string;
