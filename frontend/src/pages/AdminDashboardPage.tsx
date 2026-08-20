@@ -98,6 +98,7 @@ export function AdminDashboardPage({ onAuthError }: Props) {
   const [orderTotalPages, setOrderTotalPages] = useState(1);
   const [buyerSearch, setBuyerSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const [stockCategoryFilter, setStockCategoryFilter] = useState('');
 
   const loadOrders = useCallback(() => {
     return fetchRecentOrders(
@@ -270,9 +271,16 @@ export function AdminDashboardPage({ onAuthError }: Props) {
     );
   }
 
-  // 백엔드가 이미 카테고리 순으로 정렬해서 내려주므로, 연속된 항목을 묶기만 하면 된다.
+  // 백엔드가 이미 카테고리 순으로 정렬해서 내려주므로, 등장 순서 그대로 탭 목록을 뽑는다.
+  const stockCategories = Array.from(
+    new Set(stock.map((item) => item.categoryName)),
+  );
+  const visibleStock = stockCategoryFilter
+    ? stock.filter((item) => item.categoryName === stockCategoryFilter)
+    : stock;
+
   const stockByCategory: { categoryName: string; items: StockOverviewItem[] }[] = [];
-  for (const item of stock) {
+  for (const item of visibleStock) {
     const lastGroup = stockByCategory[stockByCategory.length - 1];
     if (lastGroup && lastGroup.categoryName === item.categoryName) {
       lastGroup.items.push(item);
@@ -292,9 +300,28 @@ export function AdminDashboardPage({ onAuthError }: Props) {
       </div>
 
       <p className="admin-section-title">재고 현황</p>
+      <div className="category-filter">
+        <button
+          type="button"
+          className={stockCategoryFilter === '' ? 'active' : ''}
+          onClick={() => setStockCategoryFilter('')}
+        >
+          전체
+        </button>
+        {stockCategories.map((categoryName) => (
+          <button
+            key={categoryName}
+            type="button"
+            className={stockCategoryFilter === categoryName ? 'active' : ''}
+            onClick={() => setStockCategoryFilter(categoryName)}
+          >
+            {categoryName}
+          </button>
+        ))}
+      </div>
       {stockByCategory.map((group) => (
-        <details key={group.categoryName} className="stock-category-group" open>
-          <summary className="stock-category-title">{group.categoryName}</summary>
+        <div key={group.categoryName} className="stock-category-group">
+          <p className="stock-category-title">{group.categoryName}</p>
           <table className="admin-table">
             <thead>
               <tr>
@@ -317,7 +344,7 @@ export function AdminDashboardPage({ onAuthError }: Props) {
               ))}
             </tbody>
           </table>
-        </details>
+        </div>
       ))}
 
       <p className="admin-section-title">최근 주문</p>

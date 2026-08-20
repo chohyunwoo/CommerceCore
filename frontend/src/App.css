@@ -783,8 +783,6 @@
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 8px;
-  cursor: pointer;
-  user-select: none;
 }
 
 .admin-search-form {
