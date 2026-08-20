@@ -16,6 +16,8 @@ export class AddOrderUserId1787203645735 implements MigrationInterface {
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP INDEX IF EXISTS idx_orders_user_id;`);
-    await queryRunner.query(`ALTER TABLE orders DROP COLUMN IF EXISTS user_id;`);
+    await queryRunner.query(
+      `ALTER TABLE orders DROP COLUMN IF EXISTS user_id;`,
+    );
   }
 }

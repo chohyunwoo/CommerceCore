@@ -33,6 +33,22 @@ export interface DeliveryEventItem {
   occurredAt: Date;
 }
 
+export interface MyOrderItem {
+  orderNumber: string;
+  status: string;
+  totalAmount: number;
+  createdAt: Date;
+  trackingNumber: string | null;
+  carrier: string | null;
+}
+
+export interface PaginatedMyOrders {
+  items: MyOrderItem[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
 export interface OrderLookupResponse {
   orderNumber: string;
   status: string;
