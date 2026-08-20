@@ -34,9 +34,7 @@ export class CartService {
       ? await this.getDbQuantities(userId)
       : await this.getRedisQuantities(cartId);
 
-    const { response, staleIds } = await this.buildResponse(
-      quantityByOptionId,
-    );
+    const { response, staleIds } = await this.buildResponse(quantityByOptionId);
 
     if (staleIds.length > 0) {
       if (userId) {
@@ -184,7 +182,9 @@ export class CartService {
     }
   }
 
-  private async getRedisQuantities(cartId: string): Promise<Map<number, number>> {
+  private async getRedisQuantities(
+    cartId: string,
+  ): Promise<Map<number, number>> {
     const raw = await this.redis.hgetall(this.key(cartId));
     const map = new Map<number, number>();
     for (const [id, quantity] of Object.entries(raw)) {
