@@ -7,6 +7,7 @@ import { OrderItem } from './entities/order-item.entity';
 import { DeliveryEvent } from './entities/delivery-event.entity';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { OrdersService } from './orders.service';
       OrderItem,
       DeliveryEvent,
     ]),
+    AuthModule,
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

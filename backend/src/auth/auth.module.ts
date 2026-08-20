@@ -10,6 +10,6 @@ import { CartModule } from '../cart/cart.module';
   imports: [TypeOrmModule.forFeature([User]), CartModule],
   controllers: [AuthController],
   providers: [AuthService, SessionGuard],
-  exports: [AuthService],
+  exports: [AuthService, SessionGuard],
 })
 export class AuthModule {}

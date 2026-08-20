@@ -17,9 +17,12 @@ import { LookupOrderQueryDto } from './dto/lookup-order-query.dto';
 import {
   CreateOrderResponse,
   InsufficientStockItem,
+  MyOrderItem,
   OrderLookupResponse,
+  PaginatedMyOrders,
   ValidateStockResponse,
 } from './orders.types';
+import { getSessionUserId } from '../common/session/session.util';
 import { AppErrors } from '../common/errors/app-errors';
 import { AppException } from '../common/errors/app-exception';
 
@@ -88,7 +91,9 @@ export class OrdersService {
   async createOrder(
     cartId: string,
     dto: CreateOrderDto,
+    sessionToken?: string,
   ): Promise<CreateOrderResponse> {
+    const userId = await getSessionUserId(this.redis, sessionToken);
     const quantityByOptionId = new Map(
       dto.items.map((item) => [item.productOptionId, item.quantity]),
     );
@@ -163,6 +168,7 @@ export class OrdersService {
             baseAddress: dto.baseAddress,
             detailAddress: dto.detailAddress ?? null,
             totalAmount,
+            userId,
           }),
         );
 
@@ -233,6 +239,52 @@ export class OrdersService {
       throw new AppException(AppErrors.ORDER_NOT_FOUND);
     }
 
+    return this.buildOrderLookupResponse(order);
+  }
+
+  async getMyOrders(
+    userId: number,
+    page = 1,
+    limit = 10,
+  ): Promise<PaginatedMyOrders> {
+    const [orders, total] = await this.orderRepository.findAndCount({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    const items: MyOrderItem[] = orders.map((order) => ({
+      orderNumber: order.orderNumber,
+      status: order.status,
+      totalAmount: order.totalAmount,
+      createdAt: order.createdAt,
+      trackingNumber: order.trackingNumber,
+      carrier: order.carrier,
+    }));
+
+    return { items, total, page, totalPages: Math.ceil(total / limit) };
+  }
+
+  /** 다른 사용자의 주문이면 존재 여부를 노출하지 않기 위해 조회 자체를 404로 처리한다. */
+  async getMyOrderDetail(
+    userId: number,
+    orderNumber: string,
+  ): Promise<OrderLookupResponse> {
+    const order = await this.orderRepository.findOne({
+      where: { orderNumber, userId },
+    });
+
+    if (!order) {
+      throw new AppException(AppErrors.ORDER_NOT_FOUND);
+    }
+
+    return this.buildOrderLookupResponse(order);
+  }
+
+  private async buildOrderLookupResponse(
+    order: Order,
+  ): Promise<OrderLookupResponse> {
     const [items, deliveryEvents] = await Promise.all([
       this.orderItemRepository.find({
         where: { order: { id: order.id } },

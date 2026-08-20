@@ -207,8 +207,10 @@ NCP VM 대신 무료 배포 조합(Render + Supabase + Upstash + Cloudflare Page
 | Method | Path | 설명 |
 |---|---|---|
 | POST | `/orders/validate-stock` | 주문 전 재고 확인. 응답: `{ valid: boolean, insufficientItems?: [...] }` (항상 200) |
-| POST | `/orders` | 실제 주문 생성. Request: `{ buyerEmail, buyerName, buyerPhone, buyerAddress, items: [{ productOptionId, quantity }] }`. Response 201: `{ orderNumber, status, totalAmount }`. 재검증 실패 시 409 |
-| GET | `/orders/lookup?orderNumber=&email=` | 주문번호+이메일 조합 조회. 응답에 `trackingNumber`/`carrier`/`deliveryEvents`(배송 단계 타임라인) 포함(결정 33). 불일치 시 404 |
+| POST | `/orders` | 실제 주문 생성. Request: `{ buyerEmail, buyerName, buyerPhone, buyerAddress, items: [{ productOptionId, quantity }] }`. Response 201: `{ orderNumber, status, totalAmount }`. `X-Session-Token`이 유효하면 `order.userId`를 자동 기록(결정 37). 재검증 실패 시 409 |
+| GET | `/orders/lookup?orderNumber=&email=` | 주문번호+이메일 조합 조회(게스트). 응답에 `trackingNumber`/`carrier`/`deliveryEvents`(배송 단계 타임라인) 포함(결정 33). 불일치 시 404 |
+| GET | `/orders/my?page=&limit=` | 로그인 필요. 내 주문 목록. 응답: `{ items, total, page, totalPages }`(`GET /products`와 동일 컨벤션, 결정 37) |
+| GET | `/orders/my/:orderNumber` | 로그인 필요. 내 주문 상세(품목, 배송 타임라인). 다른 사용자의 주문이면 404(존재 여부 비노출, 결정 37) |
 
 ### 결제 (Payments)
 
@@ -246,9 +248,9 @@ NCP VM 대신 무료 배포 조합(Render + Supabase + Upstash + Cloudflare Page
 ## 확정된 스키마
 
 - `categories` → `products` → `product_options` (재고, 비관적 락 대상)
-- `orders` (주문번호+이메일 조회 키) → `order_items` → `product_options`
+- `orders` (주문번호+이메일 조회 키) → `order_items` → `product_options`. `user_id`(nullable FK) — 로그인 사용자가 주문하면 채워지고, 게스트 체크아웃(결정 6)은 계속 null(결정 37).
 - 장바구니는 DB 테이블이 아닌 Redis (`cart:{session_id}`)로 관리하며, 주문 생성 시점에만 `order_items`로 옮겨짐.
-- `users`(id, email UNIQUE, password_hash, name) — 로그인 세션은 DB가 아닌 Redis(`session:{token}`)로 관리(결정 35). `orders`와는 아직 연결되지 않음(게스트 체크아웃 유지, 결정 6). `cart_items`(user_id, product_option_id, quantity, unique(user_id, product_option_id))로 로그인 사용자 장바구니만 연결됨(결정 36) — 게스트 장바구니는 여전히 Redis.
+- `users`(id, email UNIQUE, password_hash, name) — 로그인 세션은 DB가 아닌 Redis(`session:{token}`)로 관리(결정 35). `cart_items`(user_id, product_option_id, quantity, unique(user_id, product_option_id))로 로그인 사용자 장바구니만 연결됨(결정 36) — 게스트 장바구니는 여전히 Redis.
 - 전체 DDL: `commerce-core-schema.sql` 참고 (ERD Cloud Import > DDL 로 시각화 가능). `users`는 이후 마이그레이션(`CreateUsers`)으로 추가된 것이라 이 스냅샷엔 없음 — 결정 29대로 `src/migrations/`가 기준.
 
 ```sql
@@ -476,6 +478,19 @@ CREATE TABLE order_items (
 - **이번 범위에서 제외**: 주문을 로그인 사용자 계정에 연결(현재 게스트 체크아웃 방식 유지, 결정 35에서도 같은 이유로 보류).
 - **재검토 트리거**: 없음 (결정 3의 트리거가 이번에 해소됨).
 
+### 37. 주문-계정 연결 + 마이페이지 (내 주문 목록/상세)
+
+- **배경**: 로그인(결정 35)·장바구니 병합(결정 36)에 이어 로그인 기능의 마지막 반쪽짜리 조각 — 주문은 여전히 게스트 체크아웃(결정 6) 방식 그대로라 로그인 사용자가 "내 주문 목록"을 볼 방법이 없었음.
+- **스키마**: `orders.user_id`(nullable FK). 게스트 체크아웃(결정 6)은 그대로 유지되므로 nullable — 로그인 사용자가 주문한 경우에만 채워짐. **트러블슈팅**: `number | null` 유니온 타입을 그대로 `@Column()`에 선언했더니 TypeScript 리플렉션이 `Object`로 찍어 TypeORM이 컬럼 타입을 추론하지 못해 마이그레이션이 즉시 실패 — 결정 27에서 겪었던 사고와 정확히 같은 원인. `type: 'int'`를 명시해 해결(이번엔 로컬에서 먼저 잡아 배포 전에 확인).
+- **주문 생성**: `POST /orders`가 `X-Session-Token` 유효 여부를 장바구니 병합(결정 36)과 동일한 경량 유틸(`getSessionUserId`)로 확인해 `order.userId`에 기록. 체크아웃 폼(이메일/이름/전화번호/주소 직접 입력)은 그대로 둠 — `users`에 아직 전화번호/주소가 없어 자동완성 자체가 불가능해 이번 범위에서 제외.
+- **API**: `GET /orders/my?page=&limit=`(목록, `GET /products`와 동일 페이지네이션 컨벤션), `GET /orders/my/:orderNumber`(상세) 모두 `SessionGuard` + `@CurrentUser()`로 보호. 상세 조회 시 `order.userId`가 현재 사용자와 다르면 404로 응답 — 403(권한 없음)이 아니라 404를 선택한 이유는 "이 주문번호가 존재하는데 내 게 아니다"라는 정보 자체도 노출하지 않기 위함(게스트 조회의 이메일 불일치 시 404와 같은 판단 기준, 결정 6).
+- **모듈 의존성**: 새 엔드포인트가 `SessionGuard`/`@CurrentUser()`를 쓰기 위해 `OrdersModule`이 `AuthModule`을 import(단방향 — `AuthModule`은 `OrdersModule`을 모름). `AuthModule`이 `SessionGuard`를 export하도록 추가.
+- **리팩터링**: 게스트 조회(`lookupOrder`)와 마이페이지 상세(`getMyOrderDetail`)가 품목+배송 타임라인 조립 로직(`buildOrderLookupResponse`)을 공유하도록 추출. 프론트엔드도 게스트 주문조회 결과와 마이페이지 상세가 `OrderDetailView` 공유 컴포넌트로 렌더링을 재사용.
+- **비교한 대안(마이페이지 상세 UI)**: 목록에서 인라인 확장(토글) vs 별도 페이지 `/my/orders/:orderNumber`(**선택**) — 상세 정보(품목 여러 개 + 배송 타임라인)가 길어질 수 있어 별도 페이지가 더 깔끔하고, 공유 컴포넌트 재사용도 자연스러움.
+- **테스트**: 유닛테스트(세션 유효 시 userId 기록/무효 시 null, 목록 페이지네이션, 상세 소유권 검증) + `test/app.e2e-spec.ts`에 "로그인 → 주문 생성 → 내 주문 목록/상세 확인 → 세션 없이 401 → 다른 사용자로는 목록에 안 보이고 상세는 404"까지 실제 AppModule/DB/Redis로 검증.
+- **이번 범위에서 제외(후속 이슈로 분리)**: `users` 프로필에 전화번호/기본주소 저장 후 체크아웃 자동완성, 이 기능 이전에 생성된(`user_id` 없는) 레거시 주문을 사후에 계정과 연결하는 기능.
+- **재검토 트리거**: 없음.
+
 ### 테스트 데이터
 
 - `categories`: 신발, 상의, 하의
@@ -528,4 +543,5 @@ CREATE TABLE order_items (
 25. ~~관리자 대시보드 주문 상태별 서버사이드 페이지네이션/필터링 + 재고현황 카테고리 그룹화 (결정 34)~~ ✅ — 2026-08-20, 이슈 #61
 26. ~~자체 회원가입/로그인 (이메일+비밀번호, Redis 세션) 구현 + 풀 라이프사이클 e2e 테스트 (결정 35)~~ ✅ — 2026-08-20, 이슈 #63
 27. ~~게스트 장바구니 → 로그인 사용자 장바구니 병합 (하이브리드 Redis+DB, 결정 36)~~ ✅ — 2026-08-20, 이슈 #65
-28. 다음 기능 검토 중 — 주문-계정 연결, Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
+28. ~~주문-계정 연결 + 마이페이지 (내 주문 목록/상세, 결정 37)~~ ✅ — 2026-08-20, 이슈 #67
+29. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
