@@ -220,8 +220,8 @@ Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TT
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/admin/stock-overview` | 전체 상품 옵션의 현재 재고 목록 |
-| GET | `/admin/orders/recent` | 최근 주문 목록 (최대 20건) |
+| GET | `/admin/stock-overview` | 전체 상품 옵션의 현재 재고 목록. 카테고리 순으로 정렬되어 반환(결정 34), `categoryName` 포함 |
+| GET | `/admin/orders/recent?status=&page=&limit=` | 주문 목록. `status`(선택)로 필터링, `page`/`limit`(기본 1/20)로 페이지네이션. 응답: `{ items, total, page, totalPages }`(`GET /products`와 동일 컨벤션, 결정 34) |
 | PATCH | `/admin/orders/:id/status` | 주문 상태 전이. body: `{ status }`. 유효하지 않은 전이 시 400. PAID→CANCELLED는 TossPayments 결제취소 API 호출 후 성공해야 전이됨(결정 26) — 실패 시 400 `PAYMENT_CANCEL_FAILED`, 상태 변경 없음. PAID→SHIPPED는 `trackingNumber`/`carrier`가 body에 필수(결정 33). **SHIPPED→DELIVERED는 이 API로 직접 전이 불가** — 아래 `delivery-events`로만 진행됨 |
 | POST | `/admin/orders/:id/delivery-events` | 배송 단계 기록(결정 33). body: `{ stage, location? }`. `stage`는 `COLLECTED`→`IN_TRANSIT`→`OUT_FOR_DELIVERY`→`DELIVERED` 순서로만 기록 가능(건너뛰거나 중복 시 400). SHIPPED 상태의 주문에만 가능(그 외 400). `DELIVERED` 기록 시 주문 status도 자동으로 DELIVERED 전이 |
 | GET | `/admin/events` | SSE. `stock-update`/`order-update` 이벤트를 이름으로 구분해 하나의 연결로 푸시. `order-update`에는 배송 단계 변경도 포함됨(결정 33) |
@@ -435,6 +435,14 @@ CREATE TABLE order_items (
 - **트러블슈팅**: e2e 테스트 작성 중 `product_options.id`(BIGSERIAL) 컬럼을 `dataSource.query()`(raw SQL)의 `RETURNING id`로 읽으면 pg 드라이버가 문자열로 반환한다는 것을 발견 — TypeORM 리포지토리 경유 조회는 엔티티 메타데이터 기준으로 숫자로 변환되지만, raw query는 이 변환을 거치지 않음. 테스트 픽스처에서 `Number(...)`로 명시 변환해 해결.
 - **재검토 트리거**: 실제 택배사 API 연동이 필요해지는 시점(진짜 물류 처리 도입 등) → `delivery_events`에 택배사 API 응답을 매핑하는 방식으로 전환 검토.
 
+### 34. 관리자 대시보드 — 주문 상태별 서버사이드 페이지네이션/필터링 + 재고현황 카테고리 그룹화
+
+- **배경**: "최근 주문" 목록이 최대 20건 고정 조회라 주문이 늘어나면 특정 상태(예: 지금 배송을 시작해야 할 PAID 주문)를 찾기 어렵고, "재고 현황"도 카테고리 구분 없이 한 테이블에 뒤섞여 있어 상품이 늘어날수록 파악이 어려움.
+- **주문 목록**: 클라이언트 사이드 필터링(20건 고정 조회 유지) 대신 처음부터 서버사이드로 처리 — `GET /admin/orders/recent`에 `status`(선택)/`page`/`limit`(기본 1/20) 쿼리 파라미터를 추가하고, `GET /products`와 동일한 `{ items, total, page, totalPages }` 컨벤션으로 응답을 통일(결정 14의 페이지네이션 패턴 재사용). PENDING/PAID를 포함한 5개 상태 모두 탭으로 구분 — 관리자가 취해야 할 액션이 상태마다 다르므로(PENDING: 결제 확인/취소, PAID: 배송 시작) 일부 상태를 숨기면 오히려 예외처리가 늘어남.
+- **SSE 갱신 방식 조정**: 페이지네이션/필터링이 생기면서 `order-update` 이벤트를 받을 때마다 로컬 배열에 직접 patch하던 기존 방식은 "지금 보고 있는 페이지/필터에 이 주문이 포함되는가"를 판단하기 까다로워짐. 이벤트 수신 시 현재 필터/페이지 기준으로 다시 조회(refetch)하는 방식으로 단순화(관리자 대시보드 규모에서는 재조회 비용이 무시할 만함).
+- **재고현황**: `GET /admin/stock-overview` 응답을 `product.category` 기준으로 정렬해 반환(`categoryName` 필드 추가), 프론트엔드는 이미 정렬된 순서를 그대로 카테고리별 섹션으로 묶기만 하면 됨 — 카테고리 필터 드롭다운(한 번에 하나만 보임)은 전체 재고를 한눈에 파악하려는 목적(결정 14)과 어긋나 기각.
+- **재검토 트리거**: 없음(서버사이드로 처리해 별도 트리거 없이 확장 가능).
+
 ### 테스트 데이터
 
 - `categories`: 신발, 상의, 하의
@@ -484,4 +492,5 @@ CREATE TABLE order_items (
 22. ~~성능 병목 진단(P2-1) — 증거 기반 가설 검증(DB 풀/쿼리시간 반증 → 라우트별 비교 → 쿼리 분리로 해결, +60% 처리량/-38% p95)~~ ✅ — 2026-08-18
 23. 남은 작업: 정식 k6 처리량 스크립트(`k6/throughput-test.js`)에 thresholds(p95<300ms, error_rate<1%) 명시해 pass/fail 자동 판정되도록 정리
 24. ~~배송 추적(송장번호/택배사 + 배송 단계 타임라인) 구현 + 주문~배송완료 풀 라이프사이클 e2e 테스트 (결정 33)~~ ✅ — 2026-08-20, 이슈 #59
-25. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
+25. ~~관리자 대시보드 주문 상태별 서버사이드 페이지네이션/필터링 + 재고현황 카테고리 그룹화 (결정 34)~~ ✅ — 2026-08-20, 이슈 #61
+26. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
