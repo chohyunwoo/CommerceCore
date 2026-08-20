@@ -92,7 +92,6 @@ REDIS_HOST=localhost
 REDIS_PORT=6379
 
 PORT=3001
-ADMIN_TOKEN=your_admin_token
 
 CORS_ORIGIN=http://localhost:5173
 

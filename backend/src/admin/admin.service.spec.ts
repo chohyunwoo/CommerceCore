@@ -48,6 +48,7 @@ function createAdminService(
   const productOptionRepository = { findOne: jest.fn() };
   const categoryRepository = { find: jest.fn(), findOne: jest.fn() };
   const deliveryEventRepository = { find: jest.fn().mockResolvedValue([]) };
+  const redis = { set: jest.fn(), del: jest.fn() };
 
   const service = new AdminService(
     productOptionRepository as never,
@@ -55,6 +56,7 @@ function createAdminService(
     categoryRepository as never,
     deliveryEventRepository as never,
     dataSource as never,
+    redis as never,
     domainEvents as never,
     paymentsService as never,
   );

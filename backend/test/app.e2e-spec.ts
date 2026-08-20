@@ -55,8 +55,8 @@ describe('주문 → 배송완료 전체 라이프사이클 (e2e)', () => {
   let productId: number;
   let productOptionId: number;
   const originalFetch = global.fetch;
-  const adminToken = process.env.ADMIN_TOKEN ?? 'ci_admin_token';
   const buyerEmail = 'e2e-lifecycle@example.com';
+  const adminEmail = 'e2e-lifecycle-admin@example.com';
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -103,6 +103,7 @@ describe('주문 → 배송완료 전체 라이프사이클 (e2e)', () => {
     await dataSource.query(`DELETE FROM orders WHERE buyer_email = $1`, [
       buyerEmail,
     ]);
+    await dataSource.query(`DELETE FROM users WHERE email = $1`, [adminEmail]);
     await dataSource.query(`DELETE FROM product_options WHERE id = $1`, [
       productOptionId,
     ]);
@@ -119,6 +120,22 @@ describe('주문 → 배송완료 전체 라이프사이클 (e2e)', () => {
     const cartId = 'e2e-lifecycle-cart';
 
     global.fetch = jest.fn().mockResolvedValue(jsonResponse(200, {}));
+
+    // 정적 토큰(결정 16) 대신 role='admin' 세션으로 관리자 API를 호출한다(결정 38).
+    // role 승격은 실제 운영에서도 로그인 후 DB를 직접 수동으로 바꾸는 방식이라
+    // (코드/마이그레이션에 계정 정보를 남기지 않음) 테스트도 동일한 절차를 재현한다.
+    await request(server)
+      .post('/auth/register')
+      .send({ email: adminEmail, password: 'password1234', name: '관리자' })
+      .expect(201);
+    await dataSource.query(`UPDATE users SET role = 'admin' WHERE email = $1`, [
+      adminEmail,
+    ]);
+    const adminLoginRes = await request(server)
+      .post('/auth/login')
+      .send({ email: adminEmail, password: 'password1234' })
+      .expect(201);
+    const adminToken = (adminLoginRes.body as AuthResponse).token;
 
     const validateRes = await request(server)
       .post('/orders/validate-stock')
@@ -155,7 +172,7 @@ describe('주문 → 배송완료 전체 라이프사이클 (e2e)', () => {
 
     const shipRes = await request(server)
       .patch(`/admin/orders/${orderNumber}/status`)
-      .set('X-Admin-Token', adminToken)
+      .set('X-Session-Token', adminToken)
       .send({
         status: 'SHIPPED',
         trackingNumber: '1234567890',
@@ -171,7 +188,7 @@ describe('주문 → 배송완료 전체 라이프사이클 (e2e)', () => {
     for (const stage of stages) {
       const stageRes = await request(server)
         .post(`/admin/orders/${orderNumber}/delivery-events`)
-        .set('X-Admin-Token', adminToken)
+        .set('X-Session-Token', adminToken)
         .send({ stage })
         .expect(201);
       lastStageBody = stageRes.body as RecentOrderItem;
@@ -182,7 +199,7 @@ describe('주문 → 배송완료 전체 라이프사이클 (e2e)', () => {
     // 단계 순서를 벗어난 재기록은 거부된다.
     await request(server)
       .post(`/admin/orders/${orderNumber}/delivery-events`)
-      .set('X-Admin-Token', adminToken)
+      .set('X-Session-Token', adminToken)
       .send({ stage: 'COLLECTED' })
       .expect(400);
 

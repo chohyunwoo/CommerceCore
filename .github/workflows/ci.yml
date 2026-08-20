@@ -44,7 +44,6 @@ jobs:
       PORT: 3001
       REDIS_HOST: localhost
       REDIS_PORT: 6379
-      ADMIN_TOKEN: ci_admin_token
       CORS_ORIGIN: http://localhost:5173
 
     steps:
