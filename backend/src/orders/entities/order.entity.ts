@@ -65,6 +65,11 @@ export class Order {
   @Column({ name: 'payment_key', type: 'varchar', length: 200, nullable: true })
   paymentKey: string | null;
 
+  // 게스트 체크아웃(결정 6)은 유지되므로 nullable — 로그인 사용자가 주문한 경우에만 채워짐(이슈 #67).
+  // nullable 유니온 타입은 TypeScript 리플렉션에서 Object로 찍혀 type을 명시해야 한다(결정 27의 사고와 동일 원인).
+  @Column({ name: 'user_id', type: 'int', nullable: true })
+  userId: number | null;
+
   @Column({
     name: 'tracking_number',
     type: 'varchar',
