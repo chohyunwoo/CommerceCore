@@ -27,6 +27,12 @@ export interface OrderLookupItem {
   lineTotal: number;
 }
 
+export interface DeliveryEventItem {
+  stage: string;
+  location: string | null;
+  occurredAt: Date;
+}
+
 export interface OrderLookupResponse {
   orderNumber: string;
   status: string;
@@ -39,5 +45,8 @@ export interface OrderLookupResponse {
   detailAddress: string | null;
   totalAmount: number;
   createdAt: Date;
+  trackingNumber: string | null;
+  carrier: string | null;
+  deliveryEvents: DeliveryEventItem[];
   items: OrderLookupItem[];
 }
