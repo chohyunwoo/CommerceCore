@@ -193,7 +193,7 @@ NCP VM 대신 무료 배포 조합(Render + Supabase + Upstash + Cloudflare Page
 
 ### 장바구니 (Cart)
 
-Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TTL 14일. 재고 검증은 하지 않고 옵션 존재 여부만 확인(없으면 404). `POST`/`PATCH`/`DELETE` 모두 응답으로 **갱신된 장바구니 전체**(`GET /cart`와 동일한 형태)를 반환 — 프론트가 매번 재조회하지 않고 응답으로 상태를 갱신할 수 있게 하기 위함.
+게스트는 Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TTL 14일. **로그인 사용자(`X-Session-Token` 유효)는 DB `cart_items` 테이블로 영구 보관**(결정 36) — 같은 엔드포인트가 세션 유무에 따라 저장소만 분기하고 API 형태는 동일. 재고 검증은 하지 않고 옵션 존재 여부만 확인(없으면 404). `POST`/`PATCH`/`DELETE` 모두 응답으로 **갱신된 장바구니 전체**(`GET /cart`와 동일한 형태)를 반환 — 프론트가 매번 재조회하지 않고 응답으로 상태를 갱신할 수 있게 하기 위함.
 
 | Method | Path | 설명 |
 |---|---|---|
@@ -220,8 +220,8 @@ Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TT
 
 | Method | Path | 설명 |
 |---|---|---|
-| POST | `/auth/register` | 회원가입. Request: `{ email, password, name }`. 비밀번호는 bcryptjs로 해싱 저장. 성공 시 즉시 세션 발급(로그인 상태). 이메일 중복 시 409 `EMAIL_ALREADY_EXISTS` |
-| POST | `/auth/login` | 로그인. Request: `{ email, password }`. 실패 시 401 `INVALID_CREDENTIALS`(이메일/비밀번호 구분 없이 동일 메시지) |
+| POST | `/auth/register` | 회원가입. Request: `{ email, password, name }`. 비밀번호는 bcryptjs로 해싱 저장. 성공 시 즉시 세션 발급(로그인 상태). `X-Cart-Id`가 있으면 게스트 장바구니를 병합(결정 36). 이메일 중복 시 409 `EMAIL_ALREADY_EXISTS` |
+| POST | `/auth/login` | 로그인. Request: `{ email, password }`. `X-Cart-Id`가 있으면 게스트 장바구니를 병합(결정 36). 실패 시 401 `INVALID_CREDENTIALS`(이메일/비밀번호 구분 없이 동일 메시지) |
 | POST | `/auth/logout` | `X-Session-Token` 헤더로 세션 파기(Redis 키 삭제, 멱등적) |
 | GET | `/auth/me` | `X-Session-Token`으로 현재 로그인 사용자 조회. 세션 없음/만료 시 401 `SESSION_REQUIRED` |
 
@@ -248,7 +248,7 @@ Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TT
 - `categories` → `products` → `product_options` (재고, 비관적 락 대상)
 - `orders` (주문번호+이메일 조회 키) → `order_items` → `product_options`
 - 장바구니는 DB 테이블이 아닌 Redis (`cart:{session_id}`)로 관리하며, 주문 생성 시점에만 `order_items`로 옮겨짐.
-- `users`(id, email UNIQUE, password_hash, name) — 로그인 세션은 DB가 아닌 Redis(`session:{token}`)로 관리(결정 35). 아직 `orders`/`cart`와 연결되지 않은 독립 테이블(게스트 체크아웃 유지, 결정 6).
+- `users`(id, email UNIQUE, password_hash, name) — 로그인 세션은 DB가 아닌 Redis(`session:{token}`)로 관리(결정 35). `orders`와는 아직 연결되지 않음(게스트 체크아웃 유지, 결정 6). `cart_items`(user_id, product_option_id, quantity, unique(user_id, product_option_id))로 로그인 사용자 장바구니만 연결됨(결정 36) — 게스트 장바구니는 여전히 Redis.
 - 전체 DDL: `commerce-core-schema.sql` 참고 (ERD Cloud Import > DDL 로 시각화 가능). `users`는 이후 마이그레이션(`CreateUsers`)으로 추가된 것이라 이 스냅샷엔 없음 — 결정 29대로 `src/migrations/`가 기준.
 
 ```sql
@@ -465,6 +465,17 @@ CREATE TABLE order_items (
 - **이번 범위에서 제외(후속 이슈로 분리)**: 게스트 장바구니 → 로그인 사용자 장바구니 병합(결정 3의 재검토 트리거), 주문을 로그인 사용자 계정에 연결(현재 게스트 체크아웃 방식 유지), 관리자 SSE 사용자별 접근 제어(결정 15, 고객 로그인과는 별개 주제).
 - **재검토 트리거**: B2B(Phase 2) 진입 시점 → `users`에 `company_id` nullable FK 추가 검토.
 
+### 36. 게스트 장바구니 → 로그인 사용자 장바구니 병합 → 하이브리드(Redis + DB)
+
+- **배경**: 로그인 기능(결정 35) 도입으로 결정 3에서 남겨둔 "로그인 도입 시점 → 하이브리드(Redis+DB 병합) 방식 전환 검토" 트리거가 발동. 로그인해도 장바구니가 여전히 `X-Cart-Id` 기준 Redis 그대로라 로그인 전/후 장바구니가 분리되어 있었음.
+- **저장소 이원화 — 비교**: 로그인 사용자도 Redis 계속 사용(`cart:user:{userId}`로 키만 변경) vs DB 테이블(**선택**). 전자는 구현이 가볍지만 로그인 사용자 장바구니도 TTL로 만료되는 문제가 남아 "로그인했는데 왜 장바구니가 사라지냐"는 기대 위반이 생김. 로그인 사용자의 장바구니는 신원에 묶인 지속 데이터라 결정 3의 "휘발성 데이터엔 Redis" 기준을 거꾸로 적용해 DB(`cart_items`, `unique(user_id, product_option_id)`)로 영구 보관.
+- **분기 방식**: 엔드포인트(`GET/POST/PATCH/DELETE /cart*`)는 그대로 두고, `CartService`가 `X-Session-Token` 유효 여부로 저장소만 분기. 세션이 없거나 무효해도 401을 던지지 않고 게스트로 취급(장바구니는 로그인 필수 기능이 아님). 응답 조립 로직(`buildResponse`)은 두 경로가 공유.
+- **순환 의존성 회피**: `CartService`가 세션을 확인할 때 `AuthModule`을 import하지 않고, Redis를 직접 읽는 경량 유틸 `getSessionUserId`(`common/session/session.util.ts`)를 사용. 병합 호출을 위해 `AuthModule → CartModule` 단방향 의존성만 생기고, 반대 방향 의존성은 없음 — 두 모듈이 서로를 필요로 하는 것처럼 보였지만 실제로는 "세션 조회"(순수 함수로 대체 가능)와 "병합 실행"(진짜 서비스 의존)의 성격이 달라, 전자를 함수로 빼내는 것만으로 순환을 끊을 수 있었음.
+- **병합 시점**: `POST /auth/register`/`POST /auth/login`에 `X-Cart-Id`가 함께 오면 세션 발급 직전에 `CartService.mergeGuestCartIntoUser(cartId, userId)` 호출 — 겹치는 상품은 수량을 더하고(신규 가입은 항상 빈 DB 카트라 사실상 이관), 병합 후 게스트 장바구니(Redis)는 삭제.
+- **테스트**: `cart.service.spec.ts`(병합 시 빈 카트 no-op/신규 추가/기존 수량 합산/복수 상품 혼합, DB·Redis 분기) + `test/app.e2e-spec.ts`에 "게스트로 담기 → 회원가입 → DB 장바구니에 반영 + 게스트 장바구니 비워짐"과 "기존 DB 장바구니 + 새 게스트 장바구니 → 로그인 시 수량 합산"까지 실제 AppModule/DB/Redis로 검증.
+- **이번 범위에서 제외**: 주문을 로그인 사용자 계정에 연결(현재 게스트 체크아웃 방식 유지, 결정 35에서도 같은 이유로 보류).
+- **재검토 트리거**: 없음 (결정 3의 트리거가 이번에 해소됨).
+
 ### 테스트 데이터
 
 - `categories`: 신발, 상의, 하의
@@ -516,4 +527,5 @@ CREATE TABLE order_items (
 24. ~~배송 추적(송장번호/택배사 + 배송 단계 타임라인) 구현 + 주문~배송완료 풀 라이프사이클 e2e 테스트 (결정 33)~~ ✅ — 2026-08-20, 이슈 #59
 25. ~~관리자 대시보드 주문 상태별 서버사이드 페이지네이션/필터링 + 재고현황 카테고리 그룹화 (결정 34)~~ ✅ — 2026-08-20, 이슈 #61
 26. ~~자체 회원가입/로그인 (이메일+비밀번호, Redis 세션) 구현 + 풀 라이프사이클 e2e 테스트 (결정 35)~~ ✅ — 2026-08-20, 이슈 #63
-27. 다음 기능 검토 중 — 게스트 장바구니→로그인 사용자 병합, 주문-계정 연결, Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
+27. ~~게스트 장바구니 → 로그인 사용자 장바구니 병합 (하이브리드 Redis+DB, 결정 36)~~ ✅ — 2026-08-20, 이슈 #65
+28. 다음 기능 검토 중 — 주문-계정 연결, Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
