@@ -11,6 +11,7 @@ import {
 } from '../src/orders/orders.types';
 import { RecentOrderItem } from '../src/admin/admin.types';
 import { AuthResponse, CurrentUser } from '../src/auth/auth.types';
+import { CartResponse } from '../src/cart/cart.types';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -271,5 +272,142 @@ describe('회원가입~로그아웃 라이프사이클 (e2e)', () => {
       .get('/auth/me')
       .set('X-Session-Token', token)
       .expect(401);
+  });
+});
+
+/**
+ * 게스트 장바구니 → 로그인 사용자 장바구니 병합을 실제 AppModule(진짜 DB/Redis)로
+ * 검증한다 — 이슈 #65. 회원가입 시점(빈 DB 카트 + 게스트 항목 병합)과 로그인
+ * 시점(기존 DB 카트 + 게스트 항목 합산) 두 경로 모두 확인한다.
+ */
+describe('게스트 장바구니 → 로그인 사용자 장바구니 병합 (e2e)', () => {
+  let app: INestApplication<App>;
+  let dataSource: DataSource;
+  let categoryId: number;
+  let productId: number;
+  let productOptionId: number;
+  const testEmail = 'e2e-cart-merge@example.com';
+  const cartId1 = 'e2e-cart-merge-guest-1';
+  const cartId2 = 'e2e-cart-merge-guest-2';
+
+  beforeEach(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.init();
+
+    dataSource = app.get(DataSource);
+
+    const [category] = await dataSource.query<{ id: string }[]>(
+      `INSERT INTO categories (name) VALUES ($1) RETURNING id`,
+      ['E2E카트병합카테고리'],
+    );
+    categoryId = Number(category.id);
+
+    const [product] = await dataSource.query<{ id: string }[]>(
+      `INSERT INTO products (category_id, name, base_price) VALUES ($1, $2, $3) RETURNING id`,
+      [categoryId, 'E2E카트병합상품', 10000],
+    );
+    productId = Number(product.id);
+
+    const [option] = await dataSource.query<{ id: string }[]>(
+      `INSERT INTO product_options (product_id, size, color, stock, sku) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [productId, 'M', '블랙', 50, `E2E-CART-MERGE-SKU-${Date.now()}`],
+    );
+    productOptionId = Number(option.id);
+  });
+
+  afterEach(async () => {
+    await dataSource.query(
+      `DELETE FROM cart_items WHERE product_option_id = $1`,
+      [productOptionId],
+    );
+    await dataSource.query(`DELETE FROM users WHERE email = $1`, [testEmail]);
+    await dataSource.query(`DELETE FROM product_options WHERE id = $1`, [
+      productOptionId,
+    ]);
+    await dataSource.query(`DELETE FROM products WHERE id = $1`, [productId]);
+    await dataSource.query(`DELETE FROM categories WHERE id = $1`, [
+      categoryId,
+    ]);
+
+    await app.close();
+  });
+
+  it('회원가입 시 게스트 장바구니가 그대로 로그인 사용자 장바구니로 반영된다', async () => {
+    const server = app.getHttpServer();
+
+    await request(server)
+      .post('/cart/items')
+      .set('X-Cart-Id', cartId1)
+      .send({ productOptionId, quantity: 2 })
+      .expect(201);
+
+    const registerRes = await request(server)
+      .post('/auth/register')
+      .set('X-Cart-Id', cartId1)
+      .send({ email: testEmail, password: 'password1234', name: '카트테스트' })
+      .expect(201);
+    const { token } = registerRes.body as AuthResponse;
+
+    const cartRes = await request(server)
+      .get('/cart')
+      .set('X-Cart-Id', cartId1)
+      .set('X-Session-Token', token)
+      .expect(200);
+    const cartBody = cartRes.body as CartResponse;
+    expect(cartBody.items).toHaveLength(1);
+    expect(cartBody.items[0].productOptionId).toBe(productOptionId);
+    expect(cartBody.items[0].quantity).toBe(2);
+
+    // 병합 후 게스트 장바구니(Redis)는 비워진다.
+    const guestCartRes = await request(server)
+      .get('/cart')
+      .set('X-Cart-Id', cartId1)
+      .expect(200);
+    expect((guestCartRes.body as CartResponse).items).toHaveLength(0);
+  });
+
+  it('로그인 시 게스트 장바구니 수량이 기존 장바구니 수량에 합산된다', async () => {
+    const server = app.getHttpServer();
+
+    // 최초 회원가입으로 DB 장바구니에 수량 2 확보.
+    await request(server)
+      .post('/cart/items')
+      .set('X-Cart-Id', cartId1)
+      .send({ productOptionId, quantity: 2 })
+      .expect(201);
+    await request(server)
+      .post('/auth/register')
+      .set('X-Cart-Id', cartId1)
+      .send({ email: testEmail, password: 'password1234', name: '카트테스트' })
+      .expect(201);
+
+    // 로그아웃 상태에서 다른 게스트 장바구니에 수량 3 추가 후 로그인.
+    await request(server)
+      .post('/cart/items')
+      .set('X-Cart-Id', cartId2)
+      .send({ productOptionId, quantity: 3 })
+      .expect(201);
+
+    const loginRes = await request(server)
+      .post('/auth/login')
+      .set('X-Cart-Id', cartId2)
+      .send({ email: testEmail, password: 'password1234' })
+      .expect(201);
+    const { token } = loginRes.body as AuthResponse;
+
+    // X-Cart-Id는 로그인 사용자 경로에서는 실제로 쓰이지 않지만, 모든 장바구니
+    // 요청에 공통으로 요구되는 헤더라 그대로 실어 보낸다.
+    const cartRes = await request(server)
+      .get('/cart')
+      .set('X-Cart-Id', cartId2)
+      .set('X-Session-Token', token)
+      .expect(200);
+    const cartBody = cartRes.body as CartResponse;
+    expect(cartBody.items).toHaveLength(1);
+    expect(cartBody.items[0].quantity).toBe(5);
   });
 });

@@ -1,4 +1,5 @@
 import { apiGet, apiPost } from './client';
+import { getCartId } from '../lib/cartId';
 import type { AuthResult, CurrentUser } from './types';
 
 const SESSION_TOKEN_KEY = 'sessionToken';
@@ -19,16 +20,25 @@ function sessionHeaders(): Record<string, string> {
   return { 'X-Session-Token': getSessionToken() };
 }
 
+// 게스트 장바구니를 로그인 사용자 장바구니로 병합할 수 있도록 X-Cart-Id를 함께 보낸다.
+function cartIdHeader(): Record<string, string> {
+  return { 'X-Cart-Id': getCartId() };
+}
+
 export function register(
   email: string,
   password: string,
   name: string,
 ): Promise<AuthResult> {
-  return apiPost<AuthResult>('/auth/register', { email, password, name });
+  return apiPost<AuthResult>(
+    '/auth/register',
+    { email, password, name },
+    cartIdHeader(),
+  );
 }
 
 export function login(email: string, password: string): Promise<AuthResult> {
-  return apiPost<AuthResult>('/auth/login', { email, password });
+  return apiPost<AuthResult>('/auth/login', { email, password }, cartIdHeader());
 }
 
 export function logout(): Promise<{ success: boolean }> {

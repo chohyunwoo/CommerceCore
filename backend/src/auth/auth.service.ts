@@ -9,6 +9,7 @@ import { User } from './entities/user.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { AuthResponse, CurrentUser, SessionData } from './auth.types';
+import { CartService } from '../cart/cart.service';
 import { AppErrors } from '../common/errors/app-errors';
 import { AppException } from '../common/errors/app-exception';
 
@@ -26,9 +27,10 @@ export class AuthService {
     private readonly userRepository: Repository<User>,
     @Inject(REDIS_CLIENT)
     private readonly redis: Redis,
+    private readonly cartService: CartService,
   ) {}
 
-  async register(dto: RegisterDto): Promise<AuthResponse> {
+  async register(dto: RegisterDto, cartId?: string): Promise<AuthResponse> {
     const existing = await this.userRepository.findOne({
       where: { email: dto.email },
     });
@@ -45,10 +47,14 @@ export class AuthService {
       }),
     );
 
+    if (cartId) {
+      await this.cartService.mergeGuestCartIntoUser(cartId, user.id);
+    }
+
     return this.createSession(user);
   }
 
-  async login(dto: LoginDto): Promise<AuthResponse> {
+  async login(dto: LoginDto, cartId?: string): Promise<AuthResponse> {
     const user = await this.userRepository.findOne({
       where: { email: dto.email },
     });
@@ -62,6 +68,10 @@ export class AuthService {
     );
     if (!passwordMatches) {
       throw new AppException(AppErrors.INVALID_CREDENTIALS);
+    }
+
+    if (cartId) {
+      await this.cartService.mergeGuestCartIntoUser(cartId, user.id);
     }
 
     return this.createSession(user);

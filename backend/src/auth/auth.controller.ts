@@ -1,4 +1,11 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -13,16 +20,22 @@ import type { CurrentUser as CurrentUserData } from './auth.types';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @ApiOperation({ summary: '회원가입 (성공 시 즉시 로그인 세션 발급)' })
+  @ApiOperation({
+    summary:
+      '회원가입 (성공 시 즉시 로그인 세션 발급). X-Cart-Id가 있으면 게스트 장바구니를 로그인 사용자 장바구니로 병합',
+  })
   @Post('register')
-  register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  register(@Body() dto: RegisterDto, @Headers('x-cart-id') cartId?: string) {
+    return this.authService.register(dto, cartId);
   }
 
-  @ApiOperation({ summary: '로그인' })
+  @ApiOperation({
+    summary:
+      '로그인. X-Cart-Id가 있으면 게스트 장바구니를 로그인 사용자 장바구니로 병합',
+  })
   @Post('login')
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  login(@Body() dto: LoginDto, @Headers('x-cart-id') cartId?: string) {
+    return this.authService.login(dto, cartId);
   }
 
   @ApiOperation({ summary: '로그아웃 (해당 세션만 무효화)' })
