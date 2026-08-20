@@ -1,6 +1,9 @@
 import { AdminService } from './admin.service';
 import { Order } from '../orders/entities/order.entity';
 import { OrderStatus } from '../orders/entities/order-status.enum';
+import { DeliveryEvent } from '../orders/entities/delivery-event.entity';
+import { DeliveryStage } from '../orders/entities/delivery-stage.enum';
+import { Carrier } from '../orders/entities/carrier.enum';
 import { CreateProductDto } from './dto/create-product.dto';
 import { AppException } from '../common/errors/app-exception';
 import { AppErrors, AppErrorDefinition } from '../common/errors/app-errors';
@@ -23,11 +26,15 @@ async function expectAppError(
   }
 }
 
-function createAdminService(order: Partial<Order> | null) {
+function createAdminService(
+  order: Partial<Order> | null,
+  existingEvents: Partial<DeliveryEvent>[] = [],
+) {
   const orderRecord = order ? { ...order } : null;
 
   const manager = {
     findOne: jest.fn(() => Promise.resolve(orderRecord)),
+    find: jest.fn(() => Promise.resolve(existingEvents)),
     save: jest.fn((arg: unknown) => Promise.resolve(arg)),
     create: jest.fn((_entity: unknown, arg: unknown) => arg),
   };
@@ -265,5 +272,150 @@ describe('AdminService.createProduct', () => {
       sku: 'SHOE-001',
     });
     expect(result.category).toEqual({ id: 1, name: '신발' });
+  });
+});
+
+describe('AdminService.updateOrderStatus - 배송 추적', () => {
+  it('PAID → SHIPPED 전이 시 송장번호/택배사를 저장한다', async () => {
+    const { service, orderRecord } = createAdminService({
+      orderNumber: 'ORD-1',
+      status: OrderStatus.PAID,
+      buyerName: '홍길동',
+      totalAmount: 10000,
+      createdAt: new Date('2026-08-18T00:00:00.000Z'),
+    });
+
+    const result = await service.updateOrderStatus(
+      'ORD-1',
+      OrderStatus.SHIPPED,
+      '1234567890',
+      Carrier.CJ_LOGISTICS,
+    );
+
+    expect(result.trackingNumber).toBe('1234567890');
+    expect(result.carrier).toBe(Carrier.CJ_LOGISTICS);
+    expect(orderRecord?.trackingNumber).toBe('1234567890');
+    expect(orderRecord?.carrier).toBe(Carrier.CJ_LOGISTICS);
+  });
+
+  it('SHIPPED → DELIVERED로 직접 전이할 수 없다 (배송 단계 기록으로만 가능)', async () => {
+    const { service } = createAdminService({
+      orderNumber: 'ORD-1',
+      status: OrderStatus.SHIPPED,
+    });
+
+    await expectAppError(
+      service.updateOrderStatus('ORD-1', OrderStatus.DELIVERED),
+      AppErrors.ORDER_STATUS_TRANSITION_INVALID,
+    );
+  });
+});
+
+describe('AdminService.addDeliveryEvent', () => {
+  it('주문이 없으면 ORDER_NOT_FOUND를 던진다', async () => {
+    const { service } = createAdminService(null);
+    await expectAppError(
+      service.addDeliveryEvent('ORD-1', { stage: DeliveryStage.COLLECTED }),
+      AppErrors.ORDER_NOT_FOUND,
+    );
+  });
+
+  it('SHIPPED 상태가 아니면 DELIVERY_EVENT_ORDER_NOT_SHIPPED를 던진다', async () => {
+    const { service } = createAdminService({
+      orderNumber: 'ORD-1',
+      status: OrderStatus.PAID,
+    });
+
+    await expectAppError(
+      service.addDeliveryEvent('ORD-1', { stage: DeliveryStage.COLLECTED }),
+      AppErrors.DELIVERY_EVENT_ORDER_NOT_SHIPPED,
+    );
+  });
+
+  it('첫 단계를 건너뛰고 기록하면 DELIVERY_STAGE_ORDER_INVALID를 던진다', async () => {
+    const { service } = createAdminService(
+      { orderNumber: 'ORD-1', status: OrderStatus.SHIPPED },
+      [],
+    );
+
+    await expectAppError(
+      service.addDeliveryEvent('ORD-1', { stage: DeliveryStage.IN_TRANSIT }),
+      AppErrors.DELIVERY_STAGE_ORDER_INVALID,
+    );
+  });
+
+  it('이미 기록된 단계를 중복 기록하면 DELIVERY_STAGE_ORDER_INVALID를 던진다', async () => {
+    const { service } = createAdminService(
+      { orderNumber: 'ORD-1', status: OrderStatus.SHIPPED },
+      [
+        {
+          stage: DeliveryStage.COLLECTED,
+          occurredAt: new Date('2026-08-18T01:00:00.000Z'),
+        },
+      ],
+    );
+
+    await expectAppError(
+      service.addDeliveryEvent('ORD-1', { stage: DeliveryStage.COLLECTED }),
+      AppErrors.DELIVERY_STAGE_ORDER_INVALID,
+    );
+  });
+
+  it('순서대로 기록하면 이벤트가 타임라인에 추가된다', async () => {
+    const { service, domainEvents } = createAdminService(
+      {
+        orderNumber: 'ORD-1',
+        status: OrderStatus.SHIPPED,
+        buyerName: '홍길동',
+        totalAmount: 10000,
+        createdAt: new Date('2026-08-18T00:00:00.000Z'),
+      },
+      [
+        {
+          stage: DeliveryStage.COLLECTED,
+          occurredAt: new Date('2026-08-18T01:00:00.000Z'),
+        },
+      ],
+    );
+
+    const result = await service.addDeliveryEvent('ORD-1', {
+      stage: DeliveryStage.IN_TRANSIT,
+      location: '서울 동부 터미널',
+    });
+
+    expect(result.deliveryEvents).toHaveLength(2);
+    expect(result.deliveryEvents[1]).toMatchObject({
+      stage: DeliveryStage.IN_TRANSIT,
+      location: '서울 동부 터미널',
+    });
+    expect(result.status).toBe(OrderStatus.SHIPPED);
+    expect(domainEvents.emitOrderUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('마지막 단계(DELIVERED)를 기록하면 주문 status도 DELIVERED로 전이된다', async () => {
+    const { service, orderRecord } = createAdminService(
+      { orderNumber: 'ORD-1', status: OrderStatus.SHIPPED },
+      [
+        {
+          stage: DeliveryStage.COLLECTED,
+          occurredAt: new Date('2026-08-18T01:00:00.000Z'),
+        },
+        {
+          stage: DeliveryStage.IN_TRANSIT,
+          occurredAt: new Date('2026-08-18T02:00:00.000Z'),
+        },
+        {
+          stage: DeliveryStage.OUT_FOR_DELIVERY,
+          occurredAt: new Date('2026-08-18T03:00:00.000Z'),
+        },
+      ],
+    );
+
+    const result = await service.addDeliveryEvent('ORD-1', {
+      stage: DeliveryStage.DELIVERED,
+    });
+
+    expect(result.status).toBe(OrderStatus.DELIVERED);
+    expect(orderRecord?.status).toBe(OrderStatus.DELIVERED);
   });
 });
