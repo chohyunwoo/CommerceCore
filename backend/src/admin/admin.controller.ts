@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Sse,
   UploadedFile,
   UseGuards,
@@ -17,9 +18,11 @@ import {
   ApiBody,
   ApiConsumes,
   ApiOperation,
+  ApiQuery,
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
+import { OrderStatus } from '../orders/entities/order-status.enum';
 import { map, Observable } from 'rxjs';
 import { AdminService } from './admin.service';
 import { DomainEventsService } from '../common/events/domain-events.service';
@@ -84,10 +87,21 @@ export class AdminController {
     return this.adminService.getStockOverview();
   }
 
-  @ApiOperation({ summary: '최근 주문 목록 (최대 20건)' })
+  @ApiOperation({ summary: '주문 목록 (상태 필터 + 페이지네이션)' })
+  @ApiQuery({ name: 'status', required: false, enum: OrderStatus })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
   @Get('orders/recent')
-  getRecentOrders() {
-    return this.adminService.getRecentOrders();
+  getRecentOrders(
+    @Query('status') status?: OrderStatus,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.adminService.getRecentOrders(
+      status,
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 20,
+    );
   }
 
   @ApiOperation({

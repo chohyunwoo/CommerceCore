@@ -13,6 +13,7 @@ import { DomainEventsService } from '../common/events/domain-events.service';
 import { PaymentsService } from '../payments/payments.service';
 import {
   CategoryItem,
+  PaginatedRecentOrders,
   RecentOrderItem,
   StockOverviewItem,
 } from './admin.types';
@@ -121,13 +122,14 @@ export class AdminService {
 
   async getStockOverview(): Promise<StockOverviewItem[]> {
     const options = await this.productOptionRepository.find({
-      relations: { product: true },
-      order: { id: 'ASC' },
+      relations: { product: { category: true } },
+      order: { product: { categoryId: 'ASC' }, id: 'ASC' },
     });
 
     return options.map((option) => ({
       productOptionId: option.id,
       productName: option.product.name,
+      categoryName: option.product.category.name,
       size: option.size,
       color: option.color,
       stock: option.stock,
@@ -249,10 +251,16 @@ export class AdminService {
     return updated;
   }
 
-  async getRecentOrders(): Promise<RecentOrderItem[]> {
-    const orders = await this.orderRepository.find({
+  async getRecentOrders(
+    status?: OrderStatus,
+    page = 1,
+    limit = RECENT_ORDERS_LIMIT,
+  ): Promise<PaginatedRecentOrders> {
+    const [orders, total] = await this.orderRepository.findAndCount({
+      where: status ? { status } : undefined,
       order: { createdAt: 'DESC' },
-      take: RECENT_ORDERS_LIMIT,
+      skip: (page - 1) * limit,
+      take: limit,
     });
 
     const orderIds = orders.map((order) => order.id);
@@ -270,9 +278,14 @@ export class AdminService {
       eventsByOrderId.set(event.orderId, list);
     }
 
-    return orders.map((order) =>
-      this.toRecentOrderItem(order, eventsByOrderId.get(order.id) ?? []),
-    );
+    return {
+      items: orders.map((order) =>
+        this.toRecentOrderItem(order, eventsByOrderId.get(order.id) ?? []),
+      ),
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   private toRecentOrderItem(
