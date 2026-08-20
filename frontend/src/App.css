@@ -750,6 +750,16 @@
   margin-bottom: 16px;
 }
 
+.stock-category-group {
+  margin-bottom: 24px;
+}
+
+.stock-category-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
 .admin-table {
   width: 100%;
   border-collapse: collapse;

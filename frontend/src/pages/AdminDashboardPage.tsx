@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE_URL, ApiError } from '../api/client';
 import {
   addDeliveryEvent,
@@ -48,6 +48,15 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
   CANCELLED: '취소됨',
 };
 
+const ORDER_STATUS_TABS: { label: string; status: OrderStatus | '' }[] = [
+  { label: '전체', status: '' },
+  { label: STATUS_LABEL.PENDING, status: 'PENDING' },
+  { label: STATUS_LABEL.PAID, status: 'PAID' },
+  { label: STATUS_LABEL.SHIPPED, status: 'SHIPPED' },
+  { label: STATUS_LABEL.DELIVERED, status: 'DELIVERED' },
+  { label: STATUS_LABEL.CANCELLED, status: 'CANCELLED' },
+];
+
 const CARRIER_OPTIONS = ['CJ대한통운', '한진택배', '로젠택배', '우체국택배', '기타'];
 
 const DELIVERY_STAGE_ORDER: DeliveryStage[] = [
@@ -82,20 +91,51 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
   } | null>(null);
   const [locationDraft, setLocationDraft] = useState<Record<string, string>>({});
   const [recordingStage, setRecordingStage] = useState<string | null>(null);
+  const [orderStatusFilter, setOrderStatusFilter] = useState<OrderStatus | ''>('');
+  const [orderPage, setOrderPage] = useState(1);
+  const [orderTotalPages, setOrderTotalPages] = useState(1);
+
+  const loadOrders = useCallback(() => {
+    return fetchRecentOrders(
+      orderStatusFilter || undefined,
+      orderPage,
+      RECENT_ORDERS_LIMIT,
+    ).then(({ items, totalPages }) => {
+      setOrders(items);
+      setOrderTotalPages(totalPages);
+    });
+  }, [orderStatusFilter, orderPage]);
+
+  // SSE 이벤트 핸들러가 구독 시점의 필터/페이지를 그대로 기억하지 않도록 ref로 최신값 유지
+  const loadOrdersRef = useRef(loadOrders);
+  useEffect(() => {
+    loadOrdersRef.current = loadOrders;
+  }, [loadOrders]);
 
   useEffect(() => {
-    Promise.all([fetchStockOverview(), fetchRecentOrders()])
-      .then(([stockOverview, recentOrders]) => {
-        setStock(stockOverview);
-        setOrders(recentOrders);
-      })
+    setLoading(true);
+    Promise.all([fetchStockOverview(), loadOrders()])
+      .then(([stockOverview]) => setStock(stockOverview))
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.statusCode === 401) {
           onAuthError();
         }
       })
       .finally(() => setLoading(false));
+    // 최초 1회만 — 이후 필터/페이지 변경은 아래 effect가 담당
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onAuthError]);
+
+  const isFirstOrdersLoad = useRef(true);
+  useEffect(() => {
+    if (isFirstOrdersLoad.current) {
+      isFirstOrdersLoad.current = false;
+      return;
+    }
+    loadOrders().catch(() => {
+      // 필터/페이지 전환 실패는 조용히 무시 — 초기 로드 실패는 위 effect가 처리
+    });
+  }, [loadOrders]);
 
   useEffect(() => {
     const source = new EventSource(
@@ -113,35 +153,34 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
         );
         if (!exists) return [...prev, update];
         return prev.map((item) =>
-          item.productOptionId === update.productOptionId ? update : item,
+          item.productOptionId === update.productOptionId
+            ? { ...item, ...update }
+            : item,
         );
       });
     });
 
-    source.addEventListener('order-update', (event) => {
-      const newOrder = JSON.parse(event.data) as RecentOrderItem;
-      setOrders((prev) =>
-        [
-          newOrder,
-          ...prev.filter((order) => order.orderNumber !== newOrder.orderNumber),
-        ].slice(0, RECENT_ORDERS_LIMIT),
-      );
+    // 페이지네이션/필터가 있는 상태에서는 로컬 배열에 직접 patch하기보다,
+    // 현재 보고 있는 필터/페이지 기준으로 다시 조회하는 편이 정확하다.
+    source.addEventListener('order-update', () => {
+      void loadOrdersRef.current();
     });
 
     return () => source.close();
   }, [token]);
 
+  function handleStatusFilterChange(status: OrderStatus | '') {
+    setOrderStatusFilter(status);
+    setOrderPage(1);
+  }
+
   async function handleStatusChange(orderNumber: string, status: OrderStatus) {
     setUpdating(orderNumber);
     try {
       await updateOrderStatus(orderNumber, status);
-      // SSE가 연결돼 있으면 자동 반영, 연결 안 됐으면 로컬 업데이트
+      // SSE가 연결돼 있으면 자동 반영, 연결 안 됐으면 현재 필터/페이지 기준으로 재조회
       if (!connected) {
-        setOrders((prev) =>
-          prev.map((o) =>
-            o.orderNumber === orderNumber ? { ...o, status } : o,
-          ),
-        );
+        void loadOrders();
       }
     } finally {
       setUpdating(null);
@@ -156,13 +195,7 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
       await updateOrderStatus(orderNumber, 'SHIPPED', trackingNumber, carrier);
       setShippingForm(null);
       if (!connected) {
-        setOrders((prev) =>
-          prev.map((o) =>
-            o.orderNumber === orderNumber
-              ? { ...o, status: 'SHIPPED', trackingNumber, carrier }
-              : o,
-          ),
-        );
+        void loadOrders();
       }
     } finally {
       setUpdating(null);
@@ -173,12 +206,10 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
     setRecordingStage(orderNumber);
     try {
       const location = locationDraft[orderNumber]?.trim() || undefined;
-      const updated = await addDeliveryEvent(orderNumber, stage, location);
+      await addDeliveryEvent(orderNumber, stage, location);
       setLocationDraft((prev) => ({ ...prev, [orderNumber]: '' }));
       if (!connected) {
-        setOrders((prev) =>
-          prev.map((o) => (o.orderNumber === orderNumber ? updated : o)),
-        );
+        void loadOrders();
       }
     } finally {
       setRecordingStage(null);
@@ -193,6 +224,17 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
     );
   }
 
+  // 백엔드가 이미 카테고리 순으로 정렬해서 내려주므로, 연속된 항목을 묶기만 하면 된다.
+  const stockByCategory: { categoryName: string; items: StockOverviewItem[] }[] = [];
+  for (const item of stock) {
+    const lastGroup = stockByCategory[stockByCategory.length - 1];
+    if (lastGroup && lastGroup.categoryName === item.categoryName) {
+      lastGroup.items.push(item);
+    } else {
+      stockByCategory.push({ categoryName: item.categoryName, items: [item] });
+    }
+  }
+
   return (
     <section id="admin-dashboard">
       <div className="admin-header">
@@ -204,30 +246,47 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
       </div>
 
       <p className="admin-section-title">재고 현황</p>
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>상품</th>
-            <th>사이즈</th>
-            <th>색상</th>
-            <th>재고</th>
-          </tr>
-        </thead>
-        <tbody>
-          {stock.map((item) => (
-            <tr key={item.productOptionId}>
-              <td>{item.productName}</td>
-              <td>{item.size}</td>
-              <td>{item.color}</td>
-              <td className={item.stock === 0 ? 'stock-zero' : ''}>
-                {item.stock > 0 ? item.stock : '품절'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {stockByCategory.map((group) => (
+        <div key={group.categoryName} className="stock-category-group">
+          <p className="stock-category-title">{group.categoryName}</p>
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>상품</th>
+                <th>사이즈</th>
+                <th>색상</th>
+                <th>재고</th>
+              </tr>
+            </thead>
+            <tbody>
+              {group.items.map((item) => (
+                <tr key={item.productOptionId}>
+                  <td>{item.productName}</td>
+                  <td>{item.size}</td>
+                  <td>{item.color}</td>
+                  <td className={item.stock === 0 ? 'stock-zero' : ''}>
+                    {item.stock > 0 ? item.stock : '품절'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
 
       <p className="admin-section-title">최근 주문</p>
+      <div className="category-filter">
+        {ORDER_STATUS_TABS.map((tab) => (
+          <button
+            key={tab.status}
+            type="button"
+            className={orderStatusFilter === tab.status ? 'active' : ''}
+            onClick={() => handleStatusFilterChange(tab.status)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
       <table className="admin-table">
         <thead>
           <tr>
@@ -411,6 +470,30 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
           })}
         </tbody>
       </table>
+
+      {orderTotalPages > 1 && (
+        <div className="pagination">
+          <button
+            type="button"
+            className="pagination-btn"
+            onClick={() => setOrderPage((p) => p - 1)}
+            disabled={orderPage === 1}
+          >
+            이전
+          </button>
+          <span style={{ fontSize: '13px', color: 'var(--text-sub)' }}>
+            {orderPage} / {orderTotalPages}
+          </span>
+          <button
+            type="button"
+            className="pagination-btn"
+            onClick={() => setOrderPage((p) => p + 1)}
+            disabled={orderPage === orderTotalPages}
+          >
+            다음
+          </button>
+        </div>
+      )}
     </section>
   );
 }
