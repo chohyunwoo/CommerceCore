@@ -9,8 +9,30 @@ import { AdminPage } from './pages/AdminPage';
 import { ImageSearchPage } from './pages/ImageSearchPage';
 import { PaymentSuccessPage } from './pages/PaymentSuccessPage';
 import { PaymentFailPage } from './pages/PaymentFailPage';
+import { LoginPage } from './pages/LoginPage';
+import { RegisterPage } from './pages/RegisterPage';
 import { prefetchImageEmbeddingModel } from './lib/imageEmbedding';
+import { useAuth } from './context/AuthContext';
 import './App.css';
+
+function AuthHeaderLinks() {
+  const { user, loading, logout } = useAuth();
+
+  if (loading) return null;
+
+  if (!user) {
+    return <Link to="/login">로그인</Link>;
+  }
+
+  return (
+    <>
+      <span className="header-username">{user.name}님</span>
+      <button type="button" className="header-logout-btn" onClick={() => void logout()}>
+        로그아웃
+      </button>
+    </>
+  );
+}
 
 function App() {
   useEffect(() => {
@@ -29,6 +51,7 @@ function App() {
         <div className="header-right">
           <Link to="/cart">장바구니</Link>
           <Link to="/admin">관리자</Link>
+          <AuthHeaderLinks />
         </div>
       </header>
       <main id="content">
@@ -42,6 +65,8 @@ function App() {
           <Route path="/image-search" element={<ImageSearchPage />} />
           <Route path="/payment/success" element={<PaymentSuccessPage />} />
           <Route path="/payment/fail" element={<PaymentFailPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
         </Routes>
       </main>
     </>

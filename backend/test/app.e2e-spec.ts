@@ -10,6 +10,7 @@ import {
   ValidateStockResponse,
 } from '../src/orders/orders.types';
 import { RecentOrderItem } from '../src/admin/admin.types';
+import { AuthResponse, CurrentUser } from '../src/auth/auth.types';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -191,5 +192,84 @@ describe('주문 → 배송완료 전체 라이프사이클 (e2e)', () => {
     expect(lookupBody.trackingNumber).toBe('1234567890');
     expect(lookupBody.carrier).toBe('CJ대한통운');
     expect(lookupBody.deliveryEvents).toHaveLength(4);
+  });
+});
+
+/**
+ * 회원가입~로그아웃 전체 흐름을 실제 AppModule(진짜 DB/Redis)로 검증한다 — 이슈 #63.
+ * 로그아웃 이후 같은 토큰으로 /auth/me를 호출하면 세션이 즉시 무효화되어 401이
+ * 나는 것까지 확인해, "로그아웃이 실제로 서버 상태를 지운다"는 설계를 방어한다.
+ */
+describe('회원가입~로그아웃 라이프사이클 (e2e)', () => {
+  let app: INestApplication<App>;
+  let dataSource: DataSource;
+  const testEmail = 'e2e-auth@example.com';
+
+  beforeEach(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.init();
+
+    dataSource = app.get(DataSource);
+  });
+
+  afterEach(async () => {
+    await dataSource.query(`DELETE FROM users WHERE email = $1`, [testEmail]);
+    await app.close();
+  });
+
+  it('회원가입 → 로그인 → /me → 로그아웃 → /me(401)까지 이어진다', async () => {
+    const server = app.getHttpServer();
+
+    const registerRes = await request(server)
+      .post('/auth/register')
+      .send({ email: testEmail, password: 'password1234', name: '테스트유저' })
+      .expect(201);
+    const registerBody = registerRes.body as AuthResponse;
+    expect(registerBody.user.email).toBe(testEmail);
+    expect(registerBody.token).toBeTruthy();
+
+    // 중복 가입은 거부된다.
+    await request(server)
+      .post('/auth/register')
+      .send({ email: testEmail, password: 'password1234', name: '테스트유저' })
+      .expect(409);
+
+    const loginRes = await request(server)
+      .post('/auth/login')
+      .send({ email: testEmail, password: 'password1234' })
+      .expect(201);
+    const { token } = loginRes.body as AuthResponse;
+
+    // 틀린 비밀번호는 거부된다.
+    await request(server)
+      .post('/auth/login')
+      .send({ email: testEmail, password: 'wrong-password' })
+      .expect(401);
+
+    const meRes = await request(server)
+      .get('/auth/me')
+      .set('X-Session-Token', token)
+      .expect(200);
+    const meBody = meRes.body as CurrentUser;
+    expect(meBody.email).toBe(testEmail);
+    expect(meBody.name).toBe('테스트유저');
+
+    // 세션 토큰 없이는 401.
+    await request(server).get('/auth/me').expect(401);
+
+    await request(server)
+      .post('/auth/logout')
+      .set('X-Session-Token', token)
+      .expect(201);
+
+    // 로그아웃 이후 같은 토큰은 즉시 무효화된다.
+    await request(server)
+      .get('/auth/me')
+      .set('X-Session-Token', token)
+      .expect(401);
   });
 });

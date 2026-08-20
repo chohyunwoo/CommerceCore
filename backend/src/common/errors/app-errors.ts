@@ -100,4 +100,19 @@ export const AppErrors = {
     code: 'DELIVERY_STAGE_ORDER_INVALID',
     message: '배송 단계 순서를 건너뛰거나 중복 기록할 수 없습니다.',
   },
+  EMAIL_ALREADY_EXISTS: {
+    status: 409,
+    code: 'EMAIL_ALREADY_EXISTS',
+    message: '이미 가입된 이메일입니다.',
+  },
+  INVALID_CREDENTIALS: {
+    status: 401,
+    code: 'INVALID_CREDENTIALS',
+    message: '이메일 또는 비밀번호가 올바르지 않습니다.',
+  },
+  SESSION_REQUIRED: {
+    status: 401,
+    code: 'SESSION_REQUIRED',
+    message: '로그인이 필요합니다.',
+  },
 } as const satisfies Record<string, AppErrorDefinition>;
