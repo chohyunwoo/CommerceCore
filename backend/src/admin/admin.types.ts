@@ -1,3 +1,5 @@
+import { DeliveryEventItem } from '../orders/orders.types';
+
 export interface StockOverviewItem {
   productOptionId: number;
   productName: string;
@@ -12,6 +14,9 @@ export interface RecentOrderItem {
   buyerName: string;
   totalAmount: number;
   createdAt: Date;
+  trackingNumber: string | null;
+  carrier: string | null;
+  deliveryEvents: DeliveryEventItem[];
 }
 
 export interface CategoryItem {

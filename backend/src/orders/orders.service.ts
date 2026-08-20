@@ -8,6 +8,7 @@ import { ProductOption } from '../products/entities/product-option.entity';
 import { Product } from '../products/entities/product.entity';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
+import { DeliveryEvent } from './entities/delivery-event.entity';
 import { OrderStatus } from './entities/order-status.enum';
 import { generateOrderNumber } from './order-number.util';
 import { ValidateStockDto } from './dto/validate-stock.dto';
@@ -31,6 +32,8 @@ export class OrdersService {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(OrderItem)
     private readonly orderItemRepository: Repository<OrderItem>,
+    @InjectRepository(DeliveryEvent)
+    private readonly deliveryEventRepository: Repository<DeliveryEvent>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     @Inject(REDIS_CLIENT)
@@ -230,10 +233,16 @@ export class OrdersService {
       throw new AppException(AppErrors.ORDER_NOT_FOUND);
     }
 
-    const items = await this.orderItemRepository.find({
-      where: { order: { id: order.id } },
-      relations: { productOption: { product: true } },
-    });
+    const [items, deliveryEvents] = await Promise.all([
+      this.orderItemRepository.find({
+        where: { order: { id: order.id } },
+        relations: { productOption: { product: true } },
+      }),
+      this.deliveryEventRepository.find({
+        where: { orderId: order.id },
+        order: { occurredAt: 'ASC' },
+      }),
+    ]);
 
     return {
       orderNumber: order.orderNumber,
@@ -247,6 +256,13 @@ export class OrdersService {
       detailAddress: order.detailAddress,
       totalAmount: order.totalAmount,
       createdAt: order.createdAt,
+      trackingNumber: order.trackingNumber,
+      carrier: order.carrier,
+      deliveryEvents: deliveryEvents.map((event) => ({
+        stage: event.stage,
+        location: event.location,
+        occurredAt: event.occurredAt,
+      })),
       items: items.map((item) => ({
         productName: item.productOption.product.name,
         size: item.productOption.size,

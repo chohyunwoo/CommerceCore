@@ -101,6 +101,12 @@ export interface OrderLookupItem {
   lineTotal: number;
 }
 
+export interface DeliveryEventItem {
+  stage: string;
+  location: string | null;
+  occurredAt: string;
+}
+
 export interface OrderLookupResult {
   orderNumber: string;
   status: string;
@@ -113,6 +119,9 @@ export interface OrderLookupResult {
   detailAddress: string | null;
   totalAmount: number;
   createdAt: string;
+  trackingNumber: string | null;
+  carrier: string | null;
+  deliveryEvents: DeliveryEventItem[];
   items: OrderLookupItem[];
 }
 
@@ -130,6 +139,9 @@ export interface RecentOrderItem {
   buyerName: string;
   totalAmount: number;
   createdAt: string;
+  trackingNumber: string | null;
+  carrier: string | null;
+  deliveryEvents: DeliveryEventItem[];
 }
 
 export interface CategoryItem {

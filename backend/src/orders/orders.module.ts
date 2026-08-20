@@ -4,12 +4,19 @@ import { ProductOption } from '../products/entities/product-option.entity';
 import { Product } from '../products/entities/product.entity';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
+import { DeliveryEvent } from './entities/delivery-event.entity';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ProductOption, Product, Order, OrderItem]),
+    TypeOrmModule.forFeature([
+      ProductOption,
+      Product,
+      Order,
+      OrderItem,
+      DeliveryEvent,
+    ]),
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

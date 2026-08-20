@@ -69,6 +69,7 @@ function createOrdersService(managerOptions: ManagerMockOptions) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
     dataSource as never,
     redis as never,
     domainEvents as never,

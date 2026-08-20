@@ -90,4 +90,14 @@ export const AppErrors = {
     code: 'IMAGE_UPLOAD_FAILED',
     message: '이미지 업로드에 실패했습니다.',
   },
+  DELIVERY_EVENT_ORDER_NOT_SHIPPED: {
+    status: 400,
+    code: 'DELIVERY_EVENT_ORDER_NOT_SHIPPED',
+    message: '배송 중(SHIPPED) 상태의 주문에만 배송 단계를 기록할 수 있습니다.',
+  },
+  DELIVERY_STAGE_ORDER_INVALID: {
+    status: 400,
+    code: 'DELIVERY_STAGE_ORDER_INVALID',
+    message: '배송 단계 순서를 건너뛰거나 중복 기록할 수 없습니다.',
+  },
 } as const satisfies Record<string, AppErrorDefinition>;

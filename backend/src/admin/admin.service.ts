@@ -6,6 +6,9 @@ import { Product } from '../products/entities/product.entity';
 import { Category } from '../products/entities/category.entity';
 import { Order } from '../orders/entities/order.entity';
 import { OrderStatus } from '../orders/entities/order-status.enum';
+import { Carrier } from '../orders/entities/carrier.enum';
+import { DeliveryEvent } from '../orders/entities/delivery-event.entity';
+import { DELIVERY_STAGE_ORDER } from '../orders/entities/delivery-stage.enum';
 import { DomainEventsService } from '../common/events/domain-events.service';
 import { PaymentsService } from '../payments/payments.service';
 import {
@@ -14,16 +17,19 @@ import {
   StockOverviewItem,
 } from './admin.types';
 import { CreateProductDto } from './dto/create-product.dto';
+import { CreateDeliveryEventDto } from './dto/create-delivery-event.dto';
 import { AppErrors } from '../common/errors/app-errors';
 import { AppException } from '../common/errors/app-exception';
 
 const RECENT_ORDERS_LIMIT = 20;
 const CANCEL_REASON = '관리자에 의한 주문 취소';
 
+// SHIPPED → DELIVERED는 이 메서드로 직접 전이하지 않는다 — 배송 단계 타임라인의
+// 마지막 이벤트(DELIVERED)가 기록될 때 addDeliveryEvent()가 자동으로 전이시킨다.
 const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.PENDING]: [OrderStatus.PAID, OrderStatus.CANCELLED],
   [OrderStatus.PAID]: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
-  [OrderStatus.SHIPPED]: [OrderStatus.DELIVERED],
+  [OrderStatus.SHIPPED]: [],
   [OrderStatus.DELIVERED]: [],
   [OrderStatus.CANCELLED]: [],
 };
@@ -37,6 +43,8 @@ export class AdminService {
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
+    @InjectRepository(DeliveryEvent)
+    private readonly deliveryEventRepository: Repository<DeliveryEvent>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly domainEvents: DomainEventsService,
@@ -129,6 +137,8 @@ export class AdminService {
   async updateOrderStatus(
     orderNumber: string,
     newStatus: OrderStatus,
+    trackingNumber?: string,
+    carrier?: Carrier,
   ): Promise<RecentOrderItem> {
     const order = await this.dataSource.transaction(async (manager) => {
       const order = await manager.findOne(Order, {
@@ -163,17 +173,77 @@ export class AdminService {
         await this.paymentsService.cancel(order.paymentKey, CANCEL_REASON);
       }
 
+      if (newStatus === OrderStatus.SHIPPED) {
+        order.trackingNumber = trackingNumber ?? null;
+        order.carrier = carrier ?? null;
+      }
+
       order.status = newStatus;
       return manager.save(order);
     });
 
-    const updated: RecentOrderItem = {
-      orderNumber: order.orderNumber,
-      status: order.status,
-      buyerName: order.buyerName,
-      totalAmount: order.totalAmount,
-      createdAt: order.createdAt,
-    };
+    const updated = this.toRecentOrderItem(order, []);
+
+    this.domainEvents.emitOrderUpdate(updated);
+    return updated;
+  }
+
+  /**
+   * 배송 단계를 하나씩 기록한다. COLLECTED → IN_TRANSIT → OUT_FOR_DELIVERY → DELIVERED
+   * 순서를 벗어나면 거부한다. 마지막 단계(DELIVERED) 기록 시 주문 status도 함께 전이한다
+   * (status와 이벤트 타임라인이 따로 놀지 않도록 — SHIPPED → DELIVERED는 이 경로로만 일어남).
+   */
+  async addDeliveryEvent(
+    orderNumber: string,
+    dto: CreateDeliveryEventDto,
+  ): Promise<RecentOrderItem> {
+    const { order, events } = await this.dataSource.transaction(
+      async (manager) => {
+        const order = await manager.findOne(Order, {
+          where: { orderNumber },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!order) {
+          throw new AppException(
+            AppErrors.ORDER_NOT_FOUND,
+            `주문(${orderNumber})을 찾을 수 없습니다.`,
+          );
+        }
+        if (order.status !== OrderStatus.SHIPPED) {
+          throw new AppException(AppErrors.DELIVERY_EVENT_ORDER_NOT_SHIPPED);
+        }
+
+        const existingEvents = await manager.find(DeliveryEvent, {
+          where: { orderId: order.id },
+          order: { occurredAt: 'ASC' },
+        });
+
+        const expectedStage = DELIVERY_STAGE_ORDER[existingEvents.length];
+        if (!expectedStage || expectedStage !== dto.stage) {
+          throw new AppException(AppErrors.DELIVERY_STAGE_ORDER_INVALID);
+        }
+
+        const newEvent = await manager.save(
+          manager.create(DeliveryEvent, {
+            orderId: order.id,
+            stage: dto.stage,
+            location: dto.location ?? null,
+            occurredAt: new Date(),
+          }),
+        );
+
+        if (
+          dto.stage === DELIVERY_STAGE_ORDER[DELIVERY_STAGE_ORDER.length - 1]
+        ) {
+          order.status = OrderStatus.DELIVERED;
+          await manager.save(order);
+        }
+
+        return { order, events: [...existingEvents, newEvent] };
+      },
+    );
+
+    const updated = this.toRecentOrderItem(order, events);
 
     this.domainEvents.emitOrderUpdate(updated);
     return updated;
@@ -185,12 +255,43 @@ export class AdminService {
       take: RECENT_ORDERS_LIMIT,
     });
 
-    return orders.map((order) => ({
+    const orderIds = orders.map((order) => order.id);
+    const events = orderIds.length
+      ? await this.deliveryEventRepository.find({
+          where: { orderId: In(orderIds) },
+          order: { occurredAt: 'ASC' },
+        })
+      : [];
+
+    const eventsByOrderId = new Map<number, DeliveryEvent[]>();
+    for (const event of events) {
+      const list = eventsByOrderId.get(event.orderId) ?? [];
+      list.push(event);
+      eventsByOrderId.set(event.orderId, list);
+    }
+
+    return orders.map((order) =>
+      this.toRecentOrderItem(order, eventsByOrderId.get(order.id) ?? []),
+    );
+  }
+
+  private toRecentOrderItem(
+    order: Order,
+    events: DeliveryEvent[],
+  ): RecentOrderItem {
+    return {
       orderNumber: order.orderNumber,
       status: order.status,
       buyerName: order.buyerName,
       totalAmount: order.totalAmount,
       createdAt: order.createdAt,
-    }));
+      trackingNumber: order.trackingNumber ?? null,
+      carrier: order.carrier ?? null,
+      deliveryEvents: events.map((event) => ({
+        stage: event.stage,
+        location: event.location,
+        occurredAt: event.occurredAt,
+      })),
+    };
   }
 }

@@ -208,7 +208,7 @@ Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TT
 |---|---|---|
 | POST | `/orders/validate-stock` | 주문 전 재고 확인. 응답: `{ valid: boolean, insufficientItems?: [...] }` (항상 200) |
 | POST | `/orders` | 실제 주문 생성. Request: `{ buyerEmail, buyerName, buyerPhone, buyerAddress, items: [{ productOptionId, quantity }] }`. Response 201: `{ orderNumber, status, totalAmount }`. 재검증 실패 시 409 |
-| GET | `/orders/lookup?orderNumber=&email=` | 주문번호+이메일 조합 조회. 불일치 시 404 |
+| GET | `/orders/lookup?orderNumber=&email=` | 주문번호+이메일 조합 조회. 응답에 `trackingNumber`/`carrier`/`deliveryEvents`(배송 단계 타임라인) 포함(결정 33). 불일치 시 404 |
 
 ### 결제 (Payments)
 
@@ -222,8 +222,9 @@ Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TT
 |---|---|---|
 | GET | `/admin/stock-overview` | 전체 상품 옵션의 현재 재고 목록 |
 | GET | `/admin/orders/recent` | 최근 주문 목록 (최대 20건) |
-| PATCH | `/admin/orders/:id/status` | 주문 상태 전이. body: `{ status }`. 유효하지 않은 전이 시 400. PAID→CANCELLED는 TossPayments 결제취소 API 호출 후 성공해야 전이됨(결정 26) — 실패 시 400 `PAYMENT_CANCEL_FAILED`, 상태 변경 없음 |
-| GET | `/admin/events` | SSE. `stock-update`/`order-update` 이벤트를 이름으로 구분해 하나의 연결로 푸시 |
+| PATCH | `/admin/orders/:id/status` | 주문 상태 전이. body: `{ status }`. 유효하지 않은 전이 시 400. PAID→CANCELLED는 TossPayments 결제취소 API 호출 후 성공해야 전이됨(결정 26) — 실패 시 400 `PAYMENT_CANCEL_FAILED`, 상태 변경 없음. PAID→SHIPPED는 `trackingNumber`/`carrier`가 body에 필수(결정 33). **SHIPPED→DELIVERED는 이 API로 직접 전이 불가** — 아래 `delivery-events`로만 진행됨 |
+| POST | `/admin/orders/:id/delivery-events` | 배송 단계 기록(결정 33). body: `{ stage, location? }`. `stage`는 `COLLECTED`→`IN_TRANSIT`→`OUT_FOR_DELIVERY`→`DELIVERED` 순서로만 기록 가능(건너뛰거나 중복 시 400). SHIPPED 상태의 주문에만 가능(그 외 400). `DELIVERED` 기록 시 주문 status도 자동으로 DELIVERED 전이 |
+| GET | `/admin/events` | SSE. `stock-update`/`order-update` 이벤트를 이름으로 구분해 하나의 연결로 푸시. `order-update`에는 배송 단계 변경도 포함됨(결정 33) |
 
 ### 헬스체크 (Health) — 인증 불필요
 
@@ -417,6 +418,23 @@ CREATE TABLE order_items (
 - **재검토 트리거**: 상품 카탈로그가 수백~수천 개 규모로 커지거나 정확도 요구가 높아지는 시점 → 호스팅 임베딩 API(Voyage/Cohere)로 전환 검토. Render를 유료 티어로 전환하는 시점 → 서버사이드 자체 호스팅(CLIP)도 재검토 가능.
 - **상태**: 설계 확정, 구현 전. Notion "기술 선택 근거 정리" 페이지에도 동일 내용 반영(2026-08-19).
 
+### 33. 배송 추적(송장번호/택배사 + 배송 단계 타임라인) → 자체 이벤트 타임라인 (실제 택배사 API 미연동)
+
+- **배경**: 관리자 대시보드의 주문 상태는 `SHIPPED`(배송 중) 하나로만 표현되어 있었고, 송장번호/택배사 정보 자체가 없어 "배송 중"이 실질적인 의미를 갖지 못함. "테스트로 배송까지의 흐름을 검증했다"는 근거를 남기고 싶다는 목표도 있었음.
+- **비교한 대안**:
+  - (a) 송장번호/택배사만 저장 + 택배사 홈페이지로 링크 위임 — 구현은 가장 가볍지만 "우리 앱 안에서 위치를 보여준다"는 경험이 없음.
+  - (b) 실제 택배사 조회 API(스마트택배 등) 연동 — 검토했으나, 관리자가 입력하는 송장번호가 실제 택배사 시스템에 접수된 값이 아니라 테스트/가짜 데이터라서 연동해도 실제 위치 데이터를 얻을 수 없음. 이 프로젝트는 실제로 물건이 배송되는 이커머스가 아니므로 애초에 조회할 실체가 없다고 판단해 기각.
+  - (c) 자체 배송 이벤트 타임라인 구현 — **선택**. 실제 물류 연동 없이도 "위치/진행 상태 추적"이라는 기능 자체를 직접 설계·구현·테스트할 수 있음.
+- **선택 근거**: (c). 카테고리/색상처럼(결정 22) 종류가 적고 관리자가 직접 입력하는 값은 고정 enum으로 관리하는 이 프로젝트의 기존 기준과 일치하게, 택배사(`carrier`: CJ대한통운/한진택배/로젠택배/우체국택배/기타)와 배송 단계(`stage`: COLLECTED→IN_TRANSIT→OUT_FOR_DELIVERY→DELIVERED)를 모두 고정 enum으로 설계.
+- **구현 세부사항**:
+  - `orders`에 `tracking_number`(nullable, PAID까지만 끝난 주문엔 값 없음), `carrier` 컬럼 추가. 새 테이블 `delivery_events`(주문당 1:N, `stage`/`location`/`occurred_at`)로 단계별 기록을 남김.
+  - `PATCH /admin/orders/:id/status`가 `PAID → SHIPPED` 전이 시 `trackingNumber`/`carrier`를 조건부 필수(`@ValidateIf`)로 검증.
+  - **SHIPPED → DELIVERED 직접 전이를 상태 전이 API에서 제거**하고 `POST /admin/orders/:id/delivery-events`로만 진행되도록 함 — 두 경로가 공존하면 status와 배송 타임라인이 어긋날 수 있어(예: 중간 단계 없이 바로 DELIVERED로 점프), 상태값의 유일한 출처를 이벤트 타임라인으로 좁힘. 단계는 건너뛰거나 중복 기록할 수 없고(순서 위반 시 400), 마지막 단계(`DELIVERED`) 기록 시 주문 status도 함께 전이됨.
+  - `GET /orders/lookup` 응답과 관리자 대시보드 모두에 송장정보/타임라인을 노출. SSE `order-update` 이벤트에도 함께 실어 실시간 반영.
+- **테스트**: `test/app.e2e-spec.ts`에 실제 `AppModule`(진짜 DB)로 "주문 생성 → 재고 확인 → 결제 승인(Toss `fetch` mock, 결정 25/26과 동일 방식) → SHIPPED(송장 입력) → 배송 단계 순차 기록 → DELIVERED 자동 전이 → 주문 조회"까지 이어지는 풀 라이프사이클 테스트 1건 추가 — 상태 머신과 배송 타임라인이 끝까지 이어져 동작한다는 근거. 단계 순서 위반 시 거부되는 것도 함께 검증. 로컬 개발 DB로 실행해 통과 확인(2026-08-20).
+- **트러블슈팅**: e2e 테스트 작성 중 `product_options.id`(BIGSERIAL) 컬럼을 `dataSource.query()`(raw SQL)의 `RETURNING id`로 읽으면 pg 드라이버가 문자열로 반환한다는 것을 발견 — TypeORM 리포지토리 경유 조회는 엔티티 메타데이터 기준으로 숫자로 변환되지만, raw query는 이 변환을 거치지 않음. 테스트 픽스처에서 `Number(...)`로 명시 변환해 해결.
+- **재검토 트리거**: 실제 택배사 API 연동이 필요해지는 시점(진짜 물류 처리 도입 등) → `delivery_events`에 택배사 API 응답을 매핑하는 방식으로 전환 검토.
+
 ### 테스트 데이터
 
 - `categories`: 신발, 상의, 하의
@@ -465,4 +483,5 @@ CREATE TABLE order_items (
 21. ~~TossPayments 단일 PG 결제 연동 (POST /payments/confirm, 결제창 흐름 구현)~~ ✅ — 2026-08-16
 22. ~~성능 병목 진단(P2-1) — 증거 기반 가설 검증(DB 풀/쿼리시간 반증 → 라우트별 비교 → 쿼리 분리로 해결, +60% 처리량/-38% p95)~~ ✅ — 2026-08-18
 23. 남은 작업: 정식 k6 처리량 스크립트(`k6/throughput-test.js`)에 thresholds(p95<300ms, error_rate<1%) 명시해 pass/fail 자동 판정되도록 정리
-24. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
+24. ~~배송 추적(송장번호/택배사 + 배송 단계 타임라인) 구현 + 주문~배송완료 풀 라이프사이클 e2e 테스트 (결정 33)~~ ✅ — 2026-08-20, 이슈 #59
+25. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)

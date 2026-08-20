@@ -24,6 +24,7 @@ import { map, Observable } from 'rxjs';
 import { AdminService } from './admin.service';
 import { DomainEventsService } from '../common/events/domain-events.service';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import { CreateDeliveryEventDto } from './dto/create-delivery-event.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { SupabaseStorageService } from './supabase-storage.service';
@@ -91,14 +92,34 @@ export class AdminController {
 
   @ApiOperation({
     summary:
-      '주문 상태 전이 (PAID→CANCELLED는 TossPayments 결제취소 API 호출 후 전이)',
+      '주문 상태 전이 (PAID→CANCELLED는 TossPayments 결제취소 API 호출 후 전이, ' +
+      'PAID→SHIPPED는 trackingNumber/carrier 필수. SHIPPED→DELIVERED는 이 API로 ' +
+      '직접 전이할 수 없음 — POST .../delivery-events로 배송 단계를 기록해야 함)',
   })
   @Patch('orders/:orderNumber/status')
   updateOrderStatus(
     @Param('orderNumber') orderNumber: string,
     @Body() dto: UpdateOrderStatusDto,
   ) {
-    return this.adminService.updateOrderStatus(orderNumber, dto.status);
+    return this.adminService.updateOrderStatus(
+      orderNumber,
+      dto.status,
+      dto.trackingNumber,
+      dto.carrier,
+    );
+  }
+
+  @ApiOperation({
+    summary:
+      '배송 단계 기록 (COLLECTED → IN_TRANSIT → OUT_FOR_DELIVERY → DELIVERED 순서로만 ' +
+      '가능, SHIPPED 상태의 주문에만 가능. DELIVERED 기록 시 주문 status도 자동 전이)',
+  })
+  @Post('orders/:orderNumber/delivery-events')
+  addDeliveryEvent(
+    @Param('orderNumber') orderNumber: string,
+    @Body() dto: CreateDeliveryEventDto,
+  ) {
+    return this.adminService.addDeliveryEvent(orderNumber, dto);
   }
 
   @ApiOperation({
