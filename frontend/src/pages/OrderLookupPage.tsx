@@ -3,6 +3,20 @@ import { lookupOrder } from '../api/orders';
 import { ApiError } from '../api/client';
 import type { OrderLookupResult } from '../api/types';
 
+const DELIVERY_STAGE_ORDER = [
+  'COLLECTED',
+  'IN_TRANSIT',
+  'OUT_FOR_DELIVERY',
+  'DELIVERED',
+] as const;
+
+const DELIVERY_STAGE_LABEL: Record<string, string> = {
+  COLLECTED: '집화완료',
+  IN_TRANSIT: '간선상차',
+  OUT_FOR_DELIVERY: '배송출발',
+  DELIVERED: '배송완료',
+};
+
 export function OrderLookupPage() {
   const [orderNumber, setOrderNumber] = useState('');
   const [email, setEmail] = useState('');
@@ -73,7 +87,31 @@ export function OrderLookupPage() {
                 ? `[${order.postalCode}] ${order.baseAddress ?? ''} ${order.detailAddress ?? ''}`.trim()
                 : order.buyerAddress}
             </p>
+            {order.trackingNumber && (
+              <p>
+                송장: {order.carrier} {order.trackingNumber}
+              </p>
+            )}
           </div>
+
+          {order.deliveryEvents.length > 0 && (
+            <ol className="delivery-timeline" style={{ marginBottom: '16px' }}>
+              {DELIVERY_STAGE_ORDER.map((stage) => {
+                const event = order.deliveryEvents.find((e) => e.stage === stage);
+                return (
+                  <li key={stage} className={event ? 'done' : ''}>
+                    {DELIVERY_STAGE_LABEL[stage]}
+                    {event && (
+                      <span className="delivery-event-meta">
+                        {event.location ? ` · ${event.location}` : ''} (
+                        {new Date(event.occurredAt).toLocaleString()})
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
 
           <ul className="form-summary">
             {order.items.map((item, index) => (
