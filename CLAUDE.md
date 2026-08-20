@@ -517,6 +517,18 @@ CREATE TABLE order_items (
 - **구현**: 탭 목록은 하드코딩하지 않고 재고 데이터의 `categoryName`에서 동적으로 추출 — 카테고리가 늘어나도 코드 변경 없이 반영됨.
 - **재검토 트리거**: 없음.
 
+### 40. 보안 점검 후속 조치 — trust proxy, helmet, 로그인 rate limit, 업로드 확장자, 헤더 파싱
+
+- **배경**: 클린코드/보안 관점으로 코드베이스(특히 막 만든 관리자 RBAC 인증 로직)를 점검한 결과 5건의 개선 포인트가 발견됨. 인젝션/인증우회/RCE급 치명적 이슈는 없었고, 대부분 기존 방어를 더 단단하게 다지는 defense-in-depth 성격.
+- **1. `trust proxy` 미설정**: Render는 리버스 프록시 뒤에서 앱을 구동하는데 `app.set('trust proxy', ...)`가 없어 Express의 `req.ip`가 항상 프록시 IP로 고정됨. `ThrottlerGuard`(결정 30)는 이 IP를 키로 100회/60초 제한을 걸고 있어, 이 설정이 없으면 전체 사용자가 하나의 rate limit 버킷을 공유하는 것과 같아짐(트래픽이 몰리면 무관한 사용자끼리 서로의 요청 때문에 429를 받을 수 있음). `main.ts`에 `app.set('trust proxy', 1)` 추가로 해결(Render는 프록시 1홉).
+- **2. `helmet` 미적용**: 기본 보안 헤더(X-Content-Type-Options 등)가 전혀 없었음. 세션 토큰을 `localStorage`에 저장하는 구조(결정 35, cross-origin 제약으로 의도적 선택)라 XSS 발생 시 피해 반경이 큰 편인데, 지금은 XSS 싱크(`dangerouslySetInnerHTML`/`eval` 등)가 없어 당장 위험하진 않지만 저비용 방어선을 추가로 둠. `app.use(helmet())` 적용.
+- **3. `/auth/login`·`/auth/register`에 별도 rate limit 없음**: 전역 기본값(100회/60초, 결정 30)만 적용돼 브루트포스 저항이 느슨함. 두 라우트에만 `@Throttle({ default: { limit: 10, ttl: 60_000 } })`을 개별 적용.
+- **4. 관리자 이미지 업로드의 저장 경로 확장자를 사용자 파일명에서 그대로 가져옴**: `file.mimetype`(MIME 화이트리스트로 검증됨)과 달리 `extension = file.originalname.split('.').pop()`은 검증이 전혀 없어, 파일명에 임의 문자열(예: `evil.php`)을 넣으면 그대로 저장 경로에 반영됨. `AdminGuard`로 관리자 계정만 접근 가능하고 Supabase Storage가 업로드 시 지정한 `contentType`을 그대로 서빙해 당장 XSS/RCE로 이어지진 않지만(브라우저는 확장자가 아니라 응답 Content-Type을 기준으로 렌더링 여부를 판단), 확장자를 검증된 MIME 타입에서 매핑하는 고정 테이블로 교체해 근본 원인을 제거.
+- **5. `AdminGuard`/`AdminSseGuard`가 헤더·쿼리 배열 케이스를 무시**: `request.headers['x-session-token']`/`request.query['ticket']`을 `as string`으로 단언만 하고 실제 `string[]`(같은 헤더/쿼리가 중복 전달된 경우 Node/Express가 반환)일 가능성을 걸러내지 않음. 배열이 템플릿 리터럴에서 문자열로 뭉개져 조회가 실패해 결과적으로 401로 안전하게 막히긴 했지만(익스플로잇 가능한 상태는 아니었음), `SessionGuard`는 이미 `Array.isArray` 체크를 하고 있어 일관성이 없었음. `typeof === 'string'` 체크로 통일.
+- **부가 점검**: `tsc --noUnusedLocals --noUnusedParameters`, `ts-prune`, `depcheck`으로 backend/frontend 전체의 미사용 코드·의존성을 훑었으나 실질적인 dead code는 발견되지 않음 — `depcheck`이 backend에서 flag한 `@nestjs/schematics`/`@types/multer` 등은 `nest-cli.json`이나 앰비언트 타입(`Express.Multer.File`)으로 실제 쓰이고 있는 false positive로 확인해 제거하지 않음.
+- **테스트**: `AdminGuard`/`AdminSseGuard`에 배열 헤더·쿼리 거부 케이스, `SupabaseStorageService`에 확장자가 파일명이 아닌 MIME 타입에서 결정되는지 검증하는 유닛테스트 추가.
+- **재검토 트리거**: 없음.
+
 ### 테스트 데이터
 
 - `categories`: 신발, 상의, 하의

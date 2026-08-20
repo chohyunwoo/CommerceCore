@@ -7,6 +7,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -14,6 +15,10 @@ import { SessionToken } from './decorators/session-token.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { SessionGuard } from './guards/session.guard';
 import type { CurrentUser as CurrentUserData } from './auth.types';
+
+// 전역 기본값(100회/60초, 결정 30)은 브루트포스 방어로는 느슨하다 — 로그인/회원가입은
+// 계정당이 아니라 IP당으로 훨씬 촘촘하게 제한한다.
+const AUTH_THROTTLE = { default: { limit: 10, ttl: 60_000 } };
 
 @ApiTags('auth')
 @Controller('auth')
@@ -24,6 +29,7 @@ export class AuthController {
     summary:
       '회원가입 (성공 시 즉시 로그인 세션 발급). X-Cart-Id가 있으면 게스트 장바구니를 로그인 사용자 장바구니로 병합',
   })
+  @Throttle(AUTH_THROTTLE)
   @Post('register')
   register(@Body() dto: RegisterDto, @Headers('x-cart-id') cartId?: string) {
     return this.authService.register(dto, cartId);
@@ -33,6 +39,7 @@ export class AuthController {
     summary:
       '로그인. X-Cart-Id가 있으면 게스트 장바구니를 로그인 사용자 장바구니로 병합',
   })
+  @Throttle(AUTH_THROTTLE)
   @Post('login')
   login(@Body() dto: LoginDto, @Headers('x-cart-id') cartId?: string) {
     return this.authService.login(dto, cartId);

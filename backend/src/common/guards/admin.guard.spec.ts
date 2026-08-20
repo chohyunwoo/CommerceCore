@@ -4,7 +4,9 @@ import { UserRole } from '../../auth/entities/user-role.enum';
 import { AppException } from '../errors/app-exception';
 import { AppErrors } from '../errors/app-errors';
 
-function createContext(headers: Record<string, string>): ExecutionContext {
+function createContext(
+  headers: Record<string, string | string[]>,
+): ExecutionContext {
   const request = { headers, user: undefined as unknown };
   return {
     switchToHttp: () => ({ getRequest: () => request }),
@@ -37,6 +39,16 @@ describe('AdminGuard', () => {
     const { guard, userRepository } = createGuard(null, null);
     await expectRejectedWithAdminAuthRequired(
       guard.canActivate(createContext({})),
+    );
+    expect(userRepository.findOne).not.toHaveBeenCalled();
+  });
+
+  it('X-Session-Token 헤더가 중복 전달되어 배열이면(스푸핑 시도) 거부한다', async () => {
+    const { guard, userRepository } = createGuard(null, null);
+    await expectRejectedWithAdminAuthRequired(
+      guard.canActivate(
+        createContext({ 'x-session-token': ['token-a', 'token-b'] }),
+      ),
     );
     expect(userRepository.findOne).not.toHaveBeenCalled();
   });

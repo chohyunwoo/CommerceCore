@@ -6,6 +6,11 @@ import { AppErrors } from '../common/errors/app-errors';
 import { AppException } from '../common/errors/app-exception';
 
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
 
 @Injectable()
 export class SupabaseStorageService {
@@ -54,7 +59,9 @@ export class SupabaseStorageService {
     }
 
     const client = this.getClient();
-    const extension = file.originalname.split('.').pop() ?? 'jpg';
+    // 확장자는 사용자가 보낸 파일명이 아니라 검증된 MIME 타입에서 매핑한다 —
+    // originalname을 그대로 쓰면 검증 없는 임의 문자열이 저장 경로에 들어간다.
+    const extension = EXTENSION_BY_MIME_TYPE[file.mimetype];
     const path = `products/${Date.now()}-${randomUUID()}.${extension}`;
 
     const { error } = await client.storage

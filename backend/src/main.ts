@@ -1,12 +1,19 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Render는 리버스 프록시 뒤에서 앱을 구동한다 — 이게 없으면 req.ip가 항상
+  // 프록시 IP로 고정돼 ThrottlerGuard(결정 30)의 IP별 rate limit이 사실상
+  // 전체 사용자가 하나의 버킷을 공유하는 것과 같아진다.
+  app.set('trust proxy', 1);
+  app.use(helmet());
   app.enableCors({
     origin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
   });

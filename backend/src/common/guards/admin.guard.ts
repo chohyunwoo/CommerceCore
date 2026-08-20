@@ -30,7 +30,8 @@ export class AdminGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
-    const token = request.headers['x-session-token'] as string | undefined;
+    const rawToken = request.headers['x-session-token'];
+    const token = typeof rawToken === 'string' ? rawToken : undefined;
 
     const userId = await getSessionUserId(this.redis, token);
     if (!userId) {
