@@ -1,3 +1,5 @@
+import * as http from 'http';
+import type { AddressInfo } from 'net';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { DataSource } from 'typeorm';
@@ -40,6 +42,27 @@ describe('AppController (e2e)', () => {
 
 function jsonResponse(status: number, body: unknown) {
   return { ok: status < 300, status, json: () => Promise.resolve(body) };
+}
+
+// SSE 응답은 끝나지 않는 스트림이라 supertest의 .expect()(응답 종료까지 대기)를
+// 그대로 쓰면 테스트가 멈춘다. 응답 헤더(상태 코드)만 받고 바로 destroy한다.
+function fetchSseStatus(port: number, ticket: string): Promise<number> {
+  return new Promise((resolve) => {
+    const req = http.get(
+      {
+        host: '127.0.0.1',
+        port,
+        path: `/admin/events?ticket=${encodeURIComponent(ticket)}`,
+      },
+      (res) => {
+        resolve(res.statusCode ?? 0);
+        req.destroy();
+      },
+    );
+    req.on('error', () => {
+      // 응답을 받은 뒤 강제로 destroy()하면 소켓 에러 이벤트가 날 수 있어 무시한다.
+    });
+  });
 }
 
 /**
@@ -211,6 +234,98 @@ describe('주문 → 배송완료 전체 라이프사이클 (e2e)', () => {
     expect(lookupBody.trackingNumber).toBe('1234567890');
     expect(lookupBody.carrier).toBe('CJ대한통운');
     expect(lookupBody.deliveryEvents).toHaveLength(4);
+  });
+});
+
+/**
+ * 관리자 API의 role 기반 접근 제어를 실제 AppModule(진짜 DB/Redis)로 검증한다 —
+ * 이슈 #69. 정적 공유 토큰(결정 16)을 role='admin' 세션으로 교체했으므로, 세션이
+ * 없거나 role이 'user'인 계정은 401로 거부되는 것과, SSE 티켓이 admin에게만
+ * 발급되고 1회용으로만 쓰이는 것까지 함께 확인한다(결정 38).
+ */
+describe('관리자 API 접근 제어 (e2e)', () => {
+  let app: INestApplication<App>;
+  let dataSource: DataSource;
+  const userEmail = 'e2e-rbac-user@example.com';
+
+  beforeEach(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.init();
+
+    dataSource = app.get(DataSource);
+  });
+
+  afterEach(async () => {
+    await dataSource.query(`DELETE FROM users WHERE email = $1`, [userEmail]);
+    await app.close();
+  });
+
+  it('세션 없이 관리자 API를 호출하면 401', async () => {
+    const server = app.getHttpServer();
+
+    await request(server).get('/admin/stock-overview').expect(401);
+  });
+
+  it('로그인했지만 role이 admin이 아니면 401', async () => {
+    const server = app.getHttpServer();
+
+    const registerRes = await request(server)
+      .post('/auth/register')
+      .send({ email: userEmail, password: 'password1234', name: '일반유저' })
+      .expect(201);
+    const { token } = registerRes.body as AuthResponse;
+
+    await request(server)
+      .get('/admin/stock-overview')
+      .set('X-Session-Token', token)
+      .expect(401);
+
+    // SSE 티켓 발급도 마찬가지로 거부된다.
+    await request(server)
+      .post('/admin/events/ticket')
+      .set('X-Session-Token', token)
+      .expect(401);
+  });
+
+  it('admin 세션으로 발급받은 SSE 티켓은 1회만 사용할 수 있다', async () => {
+    const server = app.getHttpServer() as http.Server;
+
+    await request(server)
+      .post('/auth/register')
+      .send({ email: userEmail, password: 'password1234', name: '관리자후보' })
+      .expect(201);
+    await dataSource.query(`UPDATE users SET role = 'admin' WHERE email = $1`, [
+      userEmail,
+    ]);
+    const loginRes = await request(server)
+      .post('/auth/login')
+      .send({ email: userEmail, password: 'password1234' })
+      .expect(201);
+    const { token } = loginRes.body as AuthResponse;
+
+    const ticketRes = await request(server)
+      .post('/admin/events/ticket')
+      .set('X-Session-Token', token)
+      .expect(201);
+    const { ticket } = ticketRes.body as { ticket: string };
+    expect(ticket).toBeTruthy();
+
+    // supertest는 요청마다 임시 포트에 리슨했다가 응답 후 바로 닫으므로, SSE(스트림이
+    // 끝나지 않는) 요청은 별도로 직접 리슨해 포트를 확보해야 한다.
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    try {
+      const port = (server.address() as AddressInfo).port;
+      expect(await fetchSseStatus(port, ticket)).toBe(200);
+
+      // 같은 티켓 재사용은 거부된다.
+      expect(await fetchSseStatus(port, ticket)).toBe(401);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
 

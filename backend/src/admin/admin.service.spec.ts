@@ -1,3 +1,4 @@
+import { ILike } from 'typeorm';
 import { AdminService } from './admin.service';
 import { Order } from '../orders/entities/order.entity';
 import { OrderStatus } from '../orders/entities/order-status.enum';
@@ -48,11 +49,14 @@ function createAdminService(
   const productOptionRepository = { findOne: jest.fn() };
   const categoryRepository = { find: jest.fn(), findOne: jest.fn() };
   const deliveryEventRepository = { find: jest.fn().mockResolvedValue([]) };
+  const orderRepository = {
+    findAndCount: jest.fn().mockResolvedValue([[], 0]),
+  };
   const redis = { set: jest.fn(), del: jest.fn() };
 
   const service = new AdminService(
     productOptionRepository as never,
-    {} as never,
+    orderRepository as never,
     categoryRepository as never,
     deliveryEventRepository as never,
     dataSource as never,
@@ -70,6 +74,8 @@ function createAdminService(
     productOptionRepository,
     categoryRepository,
     deliveryEventRepository,
+    orderRepository,
+    redis,
   };
 }
 
@@ -419,5 +425,72 @@ describe('AdminService.addDeliveryEvent', () => {
 
     expect(result.status).toBe(OrderStatus.DELIVERED);
     expect(orderRecord?.status).toBe(OrderStatus.DELIVERED);
+  });
+});
+
+describe('AdminService.getRecentOrders', () => {
+  it('search가 없으면 status만으로 필터링한다', async () => {
+    const { service, orderRepository } = createAdminService(null);
+
+    await service.getRecentOrders(OrderStatus.PAID, 1, 20);
+
+    expect(orderRepository.findAndCount).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: OrderStatus.PAID } }),
+    );
+  });
+
+  it('search가 있으면 buyerName/buyerEmail을 OR로 검색한다', async () => {
+    const { service, orderRepository } = createAdminService(null);
+
+    await service.getRecentOrders(undefined, 1, 20, '홍길동');
+
+    expect(orderRepository.findAndCount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: [
+          { buyerName: ILike('%홍길동%') },
+          { buyerEmail: ILike('%홍길동%') },
+        ],
+      }),
+    );
+  });
+
+  it('status와 search를 함께 주면 두 OR 조건 모두에 status가 포함된다', async () => {
+    const { service, orderRepository } = createAdminService(null);
+
+    await service.getRecentOrders(OrderStatus.PAID, 1, 20, 'test@example.com');
+
+    expect(orderRepository.findAndCount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: [
+          { status: OrderStatus.PAID, buyerName: ILike('%test@example.com%') },
+          { status: OrderStatus.PAID, buyerEmail: ILike('%test@example.com%') },
+        ],
+      }),
+    );
+  });
+});
+
+describe('AdminService.issueSseTicket', () => {
+  it('무작위 티켓을 발급하고 TTL 30초로 Redis에 저장한다', async () => {
+    const { service, redis } = createAdminService(null);
+
+    const { ticket } = await service.issueSseTicket();
+
+    expect(ticket).toEqual(expect.any(String));
+    expect(redis.set).toHaveBeenCalledWith(
+      `admin-sse-ticket:${ticket}`,
+      '1',
+      'EX',
+      30,
+    );
+  });
+
+  it('호출할 때마다 서로 다른 티켓을 발급한다', async () => {
+    const { service } = createAdminService(null);
+
+    const first = await service.issueSseTicket();
+    const second = await service.issueSseTicket();
+
+    expect(first.ticket).not.toBe(second.ticket);
   });
 });
