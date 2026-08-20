@@ -30,13 +30,15 @@ import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { CreateDeliveryEventDto } from './dto/create-delivery-event.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { AdminGuard } from '../common/guards/admin.guard';
+import { AdminSseGuard } from '../common/guards/admin-sse.guard';
 import { SupabaseStorageService } from './supabase-storage.service';
 import { AppErrors } from '../common/errors/app-errors';
 import { AppException } from '../common/errors/app-exception';
 
+// SSE(events)는 EventSource가 커스텀 헤더를 못 보내 AdminGuard(세션 헤더 필요)를 쓸 수
+// 없다 — 그래서 클래스 레벨이 아니라 라우트마다 개별적으로 가드를 건다(결정 38).
 @ApiTags('admin')
-@ApiSecurity('admin-token')
-@UseGuards(AdminGuard)
+@ApiSecurity('session-token')
 @Controller('admin')
 export class AdminController {
   constructor(
@@ -46,12 +48,14 @@ export class AdminController {
   ) {}
 
   @ApiOperation({ summary: '카테고리 목록 (상품 등록 폼용)' })
+  @UseGuards(AdminGuard)
   @Get('categories')
   getCategories() {
     return this.adminService.getCategories();
   }
 
   @ApiOperation({ summary: '상품 등록 (카테고리 + 최소 1개 옵션 포함)' })
+  @UseGuards(AdminGuard)
   @Post('products')
   createProduct(@Body() dto: CreateProductDto) {
     return this.adminService.createProduct(dto);
@@ -68,6 +72,7 @@ export class AdminController {
       properties: { file: { type: 'string', format: 'binary' } },
     },
   })
+  @UseGuards(AdminGuard)
   @Post('products/upload-image')
   @HttpCode(200)
   @UseInterceptors(
@@ -82,25 +87,36 @@ export class AdminController {
   }
 
   @ApiOperation({ summary: '전체 상품 옵션의 현재 재고 목록' })
+  @UseGuards(AdminGuard)
   @Get('stock-overview')
   getStockOverview() {
     return this.adminService.getStockOverview();
   }
 
-  @ApiOperation({ summary: '주문 목록 (상태 필터 + 페이지네이션)' })
+  @ApiOperation({
+    summary: '주문 목록 (상태 필터 + 페이지네이션 + 구매자 검색)',
+  })
   @ApiQuery({ name: 'status', required: false, enum: OrderStatus })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: '구매자 이름 또는 이메일 일부 검색',
+  })
+  @UseGuards(AdminGuard)
   @Get('orders/recent')
   getRecentOrders(
     @Query('status') status?: OrderStatus,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('search') search?: string,
   ) {
     return this.adminService.getRecentOrders(
       status,
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 20,
+      search,
     );
   }
 
@@ -110,6 +126,7 @@ export class AdminController {
       'PAID→SHIPPED는 trackingNumber/carrier 필수. SHIPPED→DELIVERED는 이 API로 ' +
       '직접 전이할 수 없음 — POST .../delivery-events로 배송 단계를 기록해야 함)',
   })
+  @UseGuards(AdminGuard)
   @Patch('orders/:orderNumber/status')
   updateOrderStatus(
     @Param('orderNumber') orderNumber: string,
@@ -128,6 +145,7 @@ export class AdminController {
       '배송 단계 기록 (COLLECTED → IN_TRANSIT → OUT_FOR_DELIVERY → DELIVERED 순서로만 ' +
       '가능, SHIPPED 상태의 주문에만 가능. DELIVERED 기록 시 주문 status도 자동 전이)',
   })
+  @UseGuards(AdminGuard)
   @Post('orders/:orderNumber/delivery-events')
   addDeliveryEvent(
     @Param('orderNumber') orderNumber: string,
@@ -138,8 +156,21 @@ export class AdminController {
 
   @ApiOperation({
     summary:
-      'SSE 스트림 (stock-update/order-update). Swagger UI로는 테스트 불가 — ?token= 쿼리 파라미터로 인증',
+      'SSE 연결용 1회용 단기 티켓 발급 (TTL 30초). EventSource가 커스텀 헤더를 ' +
+      '보낼 수 없어, 세션 토큰 대신 이 티켓을 GET /admin/events?ticket=으로 전달한다.',
   })
+  @UseGuards(AdminGuard)
+  @Post('events/ticket')
+  issueSseTicket() {
+    return this.adminService.issueSseTicket();
+  }
+
+  @ApiOperation({
+    summary:
+      'SSE 스트림 (stock-update/order-update). POST /admin/events/ticket으로 발급받은 ' +
+      '1회용 티켓을 ?ticket= 쿼리 파라미터로 전달해 인증 (Swagger UI로는 테스트 불가)',
+  })
+  @UseGuards(AdminSseGuard)
   @Sse('events')
   events(): Observable<MessageEvent> {
     return this.domainEvents.events$.pipe(

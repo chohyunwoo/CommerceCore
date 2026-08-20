@@ -84,7 +84,12 @@ export class AuthService {
 
   async getCurrentUser(token: string): Promise<CurrentUser> {
     const session = await this.resolveSession(token);
-    return { id: session.userId, email: session.email, name: session.name };
+    return {
+      id: session.userId,
+      email: session.email,
+      name: session.name,
+      role: session.role,
+    };
   }
 
   async resolveSession(token: string): Promise<SessionData> {
@@ -101,6 +106,7 @@ export class AuthService {
       userId: user.id,
       email: user.email,
       name: user.name,
+      role: user.role,
     };
     await this.redis.set(
       sessionKey(token),
@@ -111,7 +117,12 @@ export class AuthService {
 
     return {
       token,
-      user: { id: user.id, email: user.email, name: user.name },
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      },
     };
   }
 }

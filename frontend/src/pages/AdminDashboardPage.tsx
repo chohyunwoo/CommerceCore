@@ -4,9 +4,12 @@ import {
   addDeliveryEvent,
   fetchRecentOrders,
   fetchStockOverview,
+  issueSseTicket,
   updateOrderStatus,
 } from '../api/admin';
 import type { RecentOrderItem, StockOverviewItem } from '../api/types';
+
+const SSE_RECONNECT_DELAY_MS = 3000;
 
 const RECENT_ORDERS_LIMIT = 20;
 
@@ -74,11 +77,10 @@ const DELIVERY_STAGE_LABEL: Record<DeliveryStage, string> = {
 };
 
 interface Props {
-  token: string;
   onAuthError: () => void;
 }
 
-export function AdminDashboardPage({ token, onAuthError }: Props) {
+export function AdminDashboardPage({ onAuthError }: Props) {
   const [stock, setStock] = useState<StockOverviewItem[]>([]);
   const [orders, setOrders] = useState<RecentOrderItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,17 +96,20 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
   const [orderStatusFilter, setOrderStatusFilter] = useState<OrderStatus | ''>('');
   const [orderPage, setOrderPage] = useState(1);
   const [orderTotalPages, setOrderTotalPages] = useState(1);
+  const [buyerSearch, setBuyerSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
 
   const loadOrders = useCallback(() => {
     return fetchRecentOrders(
       orderStatusFilter || undefined,
       orderPage,
       RECENT_ORDERS_LIMIT,
+      buyerSearch || undefined,
     ).then(({ items, totalPages }) => {
       setOrders(items);
       setOrderTotalPages(totalPages);
     });
-  }, [orderStatusFilter, orderPage]);
+  }, [orderStatusFilter, orderPage, buyerSearch]);
 
   // SSE 이벤트 핸들러가 구독 시점의 필터/페이지를 그대로 기억하지 않도록 ref로 최신값 유지
   const loadOrdersRef = useRef(loadOrders);
@@ -137,40 +142,81 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
     });
   }, [loadOrders]);
 
+  // EventSource가 커스텀 헤더를 못 보내 세션 토큰을 URL에 그대로 실을 수 없다 —
+  // 매 연결 시도마다 1회용 단기 티켓(TTL 30초)을 새로 발급받아 ?ticket=으로
+  // 전달한다(결정 38). 네이티브 자동 재연결은 이미 소모된 티켓을 재사용해 실패하므로
+  // 직접 close 후 새 티켓으로 재연결한다.
   useEffect(() => {
-    const source = new EventSource(
-      `${API_BASE_URL}/admin/events?token=${encodeURIComponent(token)}`,
-    );
+    let source: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
 
-    source.onopen = () => setConnected(true);
-    source.onerror = () => setConnected(false);
+    async function connect() {
+      try {
+        const { ticket } = await issueSseTicket();
+        if (cancelled) return;
 
-    source.addEventListener('stock-update', (event) => {
-      const update = JSON.parse(event.data) as StockOverviewItem;
-      setStock((prev) => {
-        const exists = prev.some(
-          (item) => item.productOptionId === update.productOptionId,
+        source = new EventSource(
+          `${API_BASE_URL}/admin/events?ticket=${encodeURIComponent(ticket)}`,
         );
-        if (!exists) return [...prev, update];
-        return prev.map((item) =>
-          item.productOptionId === update.productOptionId
-            ? { ...item, ...update }
-            : item,
-        );
-      });
-    });
 
-    // 페이지네이션/필터가 있는 상태에서는 로컬 배열에 직접 patch하기보다,
-    // 현재 보고 있는 필터/페이지 기준으로 다시 조회하는 편이 정확하다.
-    source.addEventListener('order-update', () => {
-      void loadOrdersRef.current();
-    });
+        source.onopen = () => setConnected(true);
+        source.onerror = () => {
+          setConnected(false);
+          source?.close();
+          if (!cancelled) {
+            reconnectTimer = setTimeout(() => void connect(), SSE_RECONNECT_DELAY_MS);
+          }
+        };
 
-    return () => source.close();
-  }, [token]);
+        source.addEventListener('stock-update', (event) => {
+          const update = JSON.parse(event.data) as StockOverviewItem;
+          setStock((prev) => {
+            const exists = prev.some(
+              (item) => item.productOptionId === update.productOptionId,
+            );
+            if (!exists) return [...prev, update];
+            return prev.map((item) =>
+              item.productOptionId === update.productOptionId
+                ? { ...item, ...update }
+                : item,
+            );
+          });
+        });
+
+        // 페이지네이션/필터가 있는 상태에서는 로컬 배열에 직접 patch하기보다,
+        // 현재 보고 있는 필터/페이지 기준으로 다시 조회하는 편이 정확하다.
+        source.addEventListener('order-update', () => {
+          void loadOrdersRef.current();
+        });
+      } catch (err: unknown) {
+        if (err instanceof ApiError && err.statusCode === 401) {
+          onAuthError();
+          return;
+        }
+        if (!cancelled) {
+          reconnectTimer = setTimeout(() => void connect(), SSE_RECONNECT_DELAY_MS);
+        }
+      }
+    }
+
+    void connect();
+
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      source?.close();
+    };
+  }, [onAuthError]);
 
   function handleStatusFilterChange(status: OrderStatus | '') {
     setOrderStatusFilter(status);
+    setOrderPage(1);
+  }
+
+  function handleSearchSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setBuyerSearch(searchInput.trim());
     setOrderPage(1);
   }
 
@@ -247,8 +293,8 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
 
       <p className="admin-section-title">재고 현황</p>
       {stockByCategory.map((group) => (
-        <div key={group.categoryName} className="stock-category-group">
-          <p className="stock-category-title">{group.categoryName}</p>
+        <details key={group.categoryName} className="stock-category-group" open>
+          <summary className="stock-category-title">{group.categoryName}</summary>
           <table className="admin-table">
             <thead>
               <tr>
@@ -271,7 +317,7 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
               ))}
             </tbody>
           </table>
-        </div>
+        </details>
       ))}
 
       <p className="admin-section-title">최근 주문</p>
@@ -287,6 +333,31 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
           </button>
         ))}
       </div>
+      <form className="admin-search-form" onSubmit={handleSearchSubmit}>
+        <input
+          type="text"
+          className="admin-search-input"
+          placeholder="구매자 이름 또는 이메일 검색"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+        />
+        <button type="submit" className="order-action-btn primary">
+          검색
+        </button>
+        {buyerSearch && (
+          <button
+            type="button"
+            className="order-action-btn"
+            onClick={() => {
+              setSearchInput('');
+              setBuyerSearch('');
+              setOrderPage(1);
+            }}
+          >
+            초기화
+          </button>
+        )}
+      </form>
       <table className="admin-table">
         <thead>
           <tr>

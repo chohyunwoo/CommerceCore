@@ -227,15 +227,16 @@ NCP VM 대신 무료 배포 조합(Render + Supabase + Upstash + Cloudflare Page
 | POST | `/auth/logout` | `X-Session-Token` 헤더로 세션 파기(Redis 키 삭제, 멱등적) |
 | GET | `/auth/me` | `X-Session-Token`으로 현재 로그인 사용자 조회. 세션 없음/만료 시 401 `SESSION_REQUIRED` |
 
-### 관리자 (Admin) — `X-Admin-Token` 헤더 인증 필요 (SSE는 `?token=` 쿼리 파라미터)
+### 관리자 (Admin) — `X-Session-Token` 헤더 + role=admin 세션 필요(결정 38). SSE는 1회용 단기 티켓을 `?ticket=` 쿼리 파라미터로 전달
 
 | Method | Path | 설명 |
 |---|---|---|
 | GET | `/admin/stock-overview` | 전체 상품 옵션의 현재 재고 목록. 카테고리 순으로 정렬되어 반환(결정 34), `categoryName` 포함 |
-| GET | `/admin/orders/recent?status=&page=&limit=` | 주문 목록. `status`(선택)로 필터링, `page`/`limit`(기본 1/20)로 페이지네이션. 응답: `{ items, total, page, totalPages }`(`GET /products`와 동일 컨벤션, 결정 34) |
+| GET | `/admin/orders/recent?status=&page=&limit=&search=` | 주문 목록. `status`(선택)로 필터링, `search`(선택)로 `buyerName`/`buyerEmail` 부분 일치 검색(결정 38), `page`/`limit`(기본 1/20)로 페이지네이션. 응답: `{ items, total, page, totalPages }`(`GET /products`와 동일 컨벤션, 결정 34) |
 | PATCH | `/admin/orders/:id/status` | 주문 상태 전이. body: `{ status }`. 유효하지 않은 전이 시 400. PAID→CANCELLED는 TossPayments 결제취소 API 호출 후 성공해야 전이됨(결정 26) — 실패 시 400 `PAYMENT_CANCEL_FAILED`, 상태 변경 없음. PAID→SHIPPED는 `trackingNumber`/`carrier`가 body에 필수(결정 33). **SHIPPED→DELIVERED는 이 API로 직접 전이 불가** — 아래 `delivery-events`로만 진행됨 |
 | POST | `/admin/orders/:id/delivery-events` | 배송 단계 기록(결정 33). body: `{ stage, location? }`. `stage`는 `COLLECTED`→`IN_TRANSIT`→`OUT_FOR_DELIVERY`→`DELIVERED` 순서로만 기록 가능(건너뛰거나 중복 시 400). SHIPPED 상태의 주문에만 가능(그 외 400). `DELIVERED` 기록 시 주문 status도 자동으로 DELIVERED 전이 |
-| GET | `/admin/events` | SSE. `stock-update`/`order-update` 이벤트를 이름으로 구분해 하나의 연결로 푸시. `order-update`에는 배송 단계 변경도 포함됨(결정 33) |
+| POST | `/admin/events/ticket` | SSE 연결용 1회용 단기 티켓 발급(TTL 30초, Redis). 응답: `{ ticket }`. `EventSource`가 커스텀 헤더를 못 보내 세션 토큰 대신 이 티켓을 아래 `/admin/events`에 쿼리로 전달한다(결정 38) |
+| GET | `/admin/events?ticket=` | SSE. `stock-update`/`order-update` 이벤트를 이름으로 구분해 하나의 연결로 푸시. `order-update`에는 배송 단계 변경도 포함됨(결정 33). `ticket`은 검증 즉시 소모되어 1회만 사용 가능(결정 38) — `AdminGuard`가 아닌 `AdminSseGuard`로 별도 보호 |
 
 ### 헬스체크 (Health) — 인증 불필요
 
@@ -375,7 +376,7 @@ CREATE TABLE order_items (
 - **배경**: API 설계 축에서 DTO+class-validator는 갖춰져 있었지만 자동화된 API 명세가 없어, CLAUDE.md의 수기 표만으로 산출물을 대신하고 있었음.
 - **비교한 대안**: (a) 별도 OpenAPI yaml/json 수동 작성 — 코드와 별도로 관리해야 해 실제 동작과 문서가 어긋날 위험. (b) `@nestjs/swagger` 데코레이터 방식.
 - **선택 근거**: (b). 코드가 곧 명세라 어긋날 위험이 낮고, 이미 있는 DTO 구조에 `@ApiProperty` 추가하는 수준의 낮은 비용.
-- **구현**: `main.ts`에 `SwaggerModule` 설정, `GET /docs`에서 Swagger UI 제공. 모든 DTO에 `@ApiProperty`, 모든 컨트롤러에 `@ApiTags`/`@ApiOperation` 추가. `X-Cart-Id`/`X-Admin-Token` 커스텀 헤더는 `DocumentBuilder.addApiKey()`로 보안 스킴 등록해 Swagger UI "Authorize" 버튼으로 테스트 가능. 배포 환경에도 별도 게이팅 없이 그대로 노출(민감 정보 없는 API 구조 문서라 포트폴리오 열람 목적에 부합).
+- **구현**: `main.ts`에 `SwaggerModule` 설정, `GET /docs`에서 Swagger UI 제공. 모든 DTO에 `@ApiProperty`, 모든 컨트롤러에 `@ApiTags`/`@ApiOperation` 추가. `X-Cart-Id`/`X-Session-Token` 커스텀 헤더는 `DocumentBuilder.addApiKey()`로 보안 스킴 등록해 Swagger UI "Authorize" 버튼으로 테스트 가능(관리자 인증이 정적 토큰에서 세션 기반으로 바뀌며 `X-Admin-Token` 스킴은 제거됨, 결정 38). 배포 환경에도 별도 게이팅 없이 그대로 노출(민감 정보 없는 API 구조 문서라 포트폴리오 열람 목적에 부합).
 - **재검토 트리거**: API에 민감한 내부 정보가 노출되기 시작하면 → 환경변수로 프로덕션 노출 여부 게이팅 검토.
 
 ### 29. TypeORM 마이그레이션 도입
@@ -491,6 +492,23 @@ CREATE TABLE order_items (
 - **이번 범위에서 제외(후속 이슈로 분리)**: `users` 프로필에 전화번호/기본주소 저장 후 체크아웃 자동완성, 이 기능 이전에 생성된(`user_id` 없는) 레거시 주문을 사후에 계정과 연결하는 기능.
 - **재검토 트리거**: 없음.
 
+### 38. 관리자 인증 → 정적 공유 토큰에서 로그인 세션 + role 기반으로 전환 + SSE 단기 티켓 + 재고 토글/구매자 검색
+
+- **배경**: 결정 16에서 배포 전 급하게 붙인 `X-Admin-Token`(정적 공유 시크릿, `.env`의 `ADMIN_TOKEN`과 단순 비교)은 로그인 시스템(결정 35)이 생기기 전 임시 방편이었음. 로그인 시스템이 생긴 지금 시점에, 관리자 대시보드 UX 개선(재고현황 토글, 구매자 검색) 요청과 함께 재검토함.
+- **비교한 대안**:
+  - (a) 그대로 유지하되 프론트엔드에서 로그인한 특정 계정(예: 고정 테스트 계정)일 때만 "관리자" 링크를 노출 — UI 노출만 바뀔 뿐 서버 인증은 여전히 정적 토큰이라 근본적 개선이 아니고, 무엇보다 특정 계정 이메일/비밀번호를 코드·마이그레이션에 하드코딩해야 해 자격증명이 공개 저장소에 남는 문제가 있음.
+  - (b) `users.role` 컬럼(enum `user`/`admin`)을 추가해 로그인 세션 기반으로 완전히 전환.
+- **선택 근거**: (b). 정적 토큰은 탈취되면 무기한 유효하고 회수(로테이션)가 번거로운 반면, role 기반은 로그인 시스템에 자연스럽게 편입되고 계정 단위로 권한을 회수할 수 있음. 자격증명을 코드에 남기지 않아도 되는 것도 장점 — 관리자 승격은 배포된 실제 계정에 대해 운영자가 직접 1회 수동 SQL을 실행하는 방식으로 처리(결정 22/26의 수동 백필과 동일한 패턴): `UPDATE users SET role = 'admin' WHERE email = '본인 이메일';`
+- **구현 세부사항**:
+  - `AdminGuard`가 `X-Session-Token`으로 세션을 조회한 뒤, role은 세션에 캐싱하지 않고 매 요청 DB(`users.role`)에서 직접 확인 — 권한 회수(강등)가 재로그인 없이 즉시 반영되도록 하기 위함. 관리자 API는 트래픽이 적어 요청마다 DB 조회 1회를 추가하는 비용은 무시 가능하다고 판단.
+  - **SSE 인증 방식 변경**: `EventSource`는 커스텀 헤더를 보낼 수 없어 기존엔 세션 토큰을 아예 `?token=` 쿼리에 그대로 실었는데(결정 16의 트러블슈팅), 이는 URL에 장기 유효 토큰이 노출되는(브라우저 히스토리·서버 로그·Referrer 등에 남을 수 있는) 리스크가 있었음. `POST /admin/events/ticket`(`AdminGuard`로 보호)로 1회용 단기 티켓(TTL 30초, Redis)을 먼저 발급받아 `GET /admin/events?ticket=`으로 넘기고, 검증 즉시 소모(Redis `DEL`, 삭제된 키 개수로 재사용 여부 판별)하도록 `AdminSseGuard`를 별도로 둠. 네이티브 `EventSource` 자동 재연결은 이미 소모된 티켓을 재사용해 실패하므로, 프론트엔드에서 연결이 끊기면 직접 `close()` 후 새 티켓을 발급받아 재연결하도록 구현.
+  - 컨트롤러 클래스 레벨의 `@UseGuards(AdminGuard)`를 제거하고, SSE(`events()`)를 제외한 모든 라우트에 개별적으로 `AdminGuard`를 걸음 — SSE만 `AdminSseGuard`를 쓰기 위함.
+  - `GET /admin/orders/recent`에 `search` 쿼리 파라미터 추가 — `buyerName`/`buyerEmail` `ILIKE` OR 검색(TypeORM `where`에 배열을 넘기면 OR로 묶임).
+  - 프론트엔드: `/admin` 라우트는 그대로 있지만 접근 게이팅을 `useAuth()`의 `role==='admin'` 여부로 처리(정적 토큰 재입력 화면 제거). 헤더의 "관리자" 링크도 admin 계정 로그인 시에만 노출. 재고 현황 카테고리 그룹은 `<details>/<summary>`로 토글 가능하게 변경.
+  - `ADMIN_TOKEN` 환경변수와 관련 문서(`.env.example`, `.env.prod.example`, `ci.yml`, Swagger `addApiKey`)를 모두 제거.
+- **테스트**: `AdminGuard`(세션 없음/무효/role≠admin/role=admin) + `AdminSseGuard`(ticket 없음/이미 소모됨/정상 소모)를 유닛테스트로 검증. e2e는 세션 없이 401, role='user' 계정으로 401(SSE 티켓 발급 포함), 발급받은 SSE 티켓이 실제로 1회만 사용 가능한지(재사용 시 401)까지 실제 AppModule+DB+Redis로 확인. 기존 배송 라이프사이클 e2e 테스트도 정적 토큰 대신 role 승격 후 로그인한 세션 토큰을 쓰도록 재작성.
+- **재검토 트리거**: 관리자가 여러 명으로 늘어나 세분화된 권한(예: 상품 등록만 가능/주문 처리만 가능)이 필요해지면 → role을 단일 enum이 아닌 permission 목록 방식으로 확장 검토.
+
 ### 테스트 데이터
 
 - `categories`: 신발, 상의, 하의
@@ -544,4 +562,5 @@ CREATE TABLE order_items (
 26. ~~자체 회원가입/로그인 (이메일+비밀번호, Redis 세션) 구현 + 풀 라이프사이클 e2e 테스트 (결정 35)~~ ✅ — 2026-08-20, 이슈 #63
 27. ~~게스트 장바구니 → 로그인 사용자 장바구니 병합 (하이브리드 Redis+DB, 결정 36)~~ ✅ — 2026-08-20, 이슈 #65
 28. ~~주문-계정 연결 + 마이페이지 (내 주문 목록/상세, 결정 37)~~ ✅ — 2026-08-20, 이슈 #67
-29. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
+29. ~~관리자 인증을 정적 토큰에서 로그인 세션 + role 기반으로 전환 + SSE 단기 티켓 + 재고현황 토글/구매자 검색 (결정 38)~~ ✅ — 2026-08-20, 이슈 #69
+30. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)

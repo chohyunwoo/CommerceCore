@@ -2,6 +2,7 @@ export interface CurrentUser {
   id: number;
   email: string;
   name: string;
+  role: string;
 }
 
 export interface AuthResponse {
@@ -13,4 +14,5 @@ export interface SessionData {
   userId: number;
   email: string;
   name: string;
+  role: string;
 }

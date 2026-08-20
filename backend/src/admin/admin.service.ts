@@ -1,6 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, ILike, In, Repository } from 'typeorm';
+import type { Redis } from 'ioredis';
+import { REDIS_CLIENT } from '../redis/redis.constants';
+import { adminSseTicketKey } from '../common/session/admin-sse-ticket.util';
 import { ProductOption } from '../products/entities/product-option.entity';
 import { Product } from '../products/entities/product.entity';
 import { Category } from '../products/entities/category.entity';
@@ -24,6 +28,7 @@ import { AppException } from '../common/errors/app-exception';
 
 const RECENT_ORDERS_LIMIT = 20;
 const CANCEL_REASON = '관리자에 의한 주문 취소';
+const ADMIN_SSE_TICKET_TTL_SECONDS = 30;
 
 // SHIPPED → DELIVERED는 이 메서드로 직접 전이하지 않는다 — 배송 단계 타임라인의
 // 마지막 이벤트(DELIVERED)가 기록될 때 addDeliveryEvent()가 자동으로 전이시킨다.
@@ -48,9 +53,28 @@ export class AdminService {
     private readonly deliveryEventRepository: Repository<DeliveryEvent>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    @Inject(REDIS_CLIENT)
+    private readonly redis: Redis,
     private readonly domainEvents: DomainEventsService,
     private readonly paymentsService: PaymentsService,
   ) {}
+
+  /**
+   * EventSource가 커스텀 헤더를 못 보내 세션 토큰을 URL에 그대로 실어야 했던
+   * 문제를 해소하기 위한 1회용 단기 티켓 발급(결정 38). 이 메서드 자체는
+   * AdminGuard(세션+role 검증)로 보호되므로, 티켓 발급 시점엔 이미 관리자임이
+   * 확인된 상태다.
+   */
+  async issueSseTicket(): Promise<{ ticket: string }> {
+    const ticket = randomUUID();
+    await this.redis.set(
+      adminSseTicketKey(ticket),
+      '1',
+      'EX',
+      ADMIN_SSE_TICKET_TTL_SECONDS,
+    );
+    return { ticket };
+  }
 
   async getCategories(): Promise<CategoryItem[]> {
     const categories = await this.categoryRepository.find({
@@ -255,9 +279,23 @@ export class AdminService {
     status?: OrderStatus,
     page = 1,
     limit = RECENT_ORDERS_LIMIT,
+    search?: string,
   ): Promise<PaginatedRecentOrders> {
+    const trimmedSearch = search?.trim();
+    const baseWhere = status ? { status } : {};
+    // 이름/이메일 중 하나만 일치해도 찾을 수 있어야 하므로 OR — TypeORM에서는
+    // where에 배열을 넘기면 각 원소가 OR로 묶인다(각 원소 내부는 AND).
+    const where = trimmedSearch
+      ? [
+          { ...baseWhere, buyerName: ILike(`%${trimmedSearch}%`) },
+          { ...baseWhere, buyerEmail: ILike(`%${trimmedSearch}%`) },
+        ]
+      : status
+        ? baseWhere
+        : undefined;
+
     const [orders, total] = await this.orderRepository.findAndCount({
-      where: status ? { status } : undefined,
+      where,
       order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,

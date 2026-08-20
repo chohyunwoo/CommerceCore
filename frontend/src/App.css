@@ -783,6 +783,25 @@
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.admin-search-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.admin-search-input {
+  flex: 1;
+  max-width: 320px;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
 }
 
 .admin-table {

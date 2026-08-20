@@ -1,49 +1,44 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { AdminDashboardPage } from './AdminDashboardPage';
 import { AdminProductForm } from './AdminProductForm';
+import { useAuth } from '../context/AuthContext';
 
 type AdminTab = 'dashboard' | 'products';
 
 export function AdminPage() {
-  const [token, setToken] = useState(() => localStorage.getItem('adminToken') ?? '');
-  const [input, setInput] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const { user, loading, logout } = useAuth();
   const [tab, setTab] = useState<AdminTab>('dashboard');
 
-  function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    if (!input.trim()) return;
-    localStorage.setItem('adminToken', input.trim());
-    setToken(input.trim());
-    setInput('');
-    setError(null);
-  }
-
+  // 세션이 만료되거나 권한이 회수된 채로 관리자 API를 호출하면 401이 돌아온다 —
+  // 그 경우 세션을 정리하고 재로그인을 안내한다(정적 토큰 재입력 방식이 아님).
   function handleAuthError() {
-    localStorage.removeItem('adminToken');
-    setToken('');
-    setError('인증에 실패했습니다. 토큰을 다시 입력해 주세요.');
+    void logout();
   }
 
-  if (!token) {
+  if (loading) {
+    return (
+      <section id="admin-login">
+        <p style={{ color: 'var(--text-sub)', fontSize: '13px' }}>불러오는 중...</p>
+      </section>
+    );
+  }
+
+  if (!user || user.role !== 'admin') {
     return (
       <section id="admin-login">
         <div className="admin-login-box">
-          <h1 className="admin-login-title">관리자 로그인</h1>
-          {error && <p className="admin-login-error">{error}</p>}
-          <form className="admin-login-form" onSubmit={handleLogin}>
-            <input
-              type="password"
-              className="admin-login-input"
-              placeholder="관리자 토큰"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              autoFocus
-            />
-            <button type="submit" className="admin-login-btn">
-              확인
-            </button>
-          </form>
+          <h1 className="admin-login-title">관리자 전용 페이지입니다</h1>
+          <p className="admin-login-error">
+            {user
+              ? '이 계정은 관리자 권한이 없습니다.'
+              : '관리자 계정으로 로그인해야 접근할 수 있습니다.'}
+          </p>
+          {!user && (
+            <Link to="/login" className="admin-login-btn" style={{ display: 'inline-block' }}>
+              로그인하러 가기
+            </Link>
+          )}
         </div>
       </section>
     );
@@ -68,7 +63,7 @@ export function AdminPage() {
         </button>
       </div>
       {tab === 'dashboard' ? (
-        <AdminDashboardPage token={token} onAuthError={handleAuthError} />
+        <AdminDashboardPage onAuthError={handleAuthError} />
       ) : (
         <AdminProductForm onAuthError={handleAuthError} />
       )}
