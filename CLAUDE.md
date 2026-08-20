@@ -181,7 +181,7 @@ NCP VM 대신 무료 배포 조합(Render + Supabase + Upstash + Cloudflare Page
 
 ## API 명세
 
-**공통**: 모든 장바구니/주문 요청에 `X-Cart-Id` 헤더 필요. 에러는 `{ statusCode, message, code }` 포맷 (결정 9 참고).
+**공통**: 모든 장바구니/주문 요청에 `X-Cart-Id` 헤더 필요, 로그인 사용자 요청은 `X-Session-Token` 헤더 필요(결정 35). 에러는 `{ statusCode, message, code }` 포맷 (결정 9 참고).
 
 ### 상품 (Products)
 
@@ -216,6 +216,15 @@ Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TT
 |---|---|---|
 | POST | `/payments/confirm` | TossPayments 결제 승인. Request: `{ paymentKey, orderId, amount }`. 금액 검증 후 TossPayments 서버 승인 API 호출 → 주문 상태 PENDING → PAID. 금액 불일치 시 400 |
 
+### 회원 (Auth)
+
+| Method | Path | 설명 |
+|---|---|---|
+| POST | `/auth/register` | 회원가입. Request: `{ email, password, name }`. 비밀번호는 bcryptjs로 해싱 저장. 성공 시 즉시 세션 발급(로그인 상태). 이메일 중복 시 409 `EMAIL_ALREADY_EXISTS` |
+| POST | `/auth/login` | 로그인. Request: `{ email, password }`. 실패 시 401 `INVALID_CREDENTIALS`(이메일/비밀번호 구분 없이 동일 메시지) |
+| POST | `/auth/logout` | `X-Session-Token` 헤더로 세션 파기(Redis 키 삭제, 멱등적) |
+| GET | `/auth/me` | `X-Session-Token`으로 현재 로그인 사용자 조회. 세션 없음/만료 시 401 `SESSION_REQUIRED` |
+
 ### 관리자 (Admin) — `X-Admin-Token` 헤더 인증 필요 (SSE는 `?token=` 쿼리 파라미터)
 
 | Method | Path | 설명 |
@@ -239,7 +248,8 @@ Redis `cart:{cartId}` 해시(필드=`productOptionId`, 값=수량)로 저장, TT
 - `categories` → `products` → `product_options` (재고, 비관적 락 대상)
 - `orders` (주문번호+이메일 조회 키) → `order_items` → `product_options`
 - 장바구니는 DB 테이블이 아닌 Redis (`cart:{session_id}`)로 관리하며, 주문 생성 시점에만 `order_items`로 옮겨짐.
-- 전체 DDL: `commerce-core-schema.sql` 참고 (ERD Cloud Import > DDL 로 시각화 가능).
+- `users`(id, email UNIQUE, password_hash, name) — 로그인 세션은 DB가 아닌 Redis(`session:{token}`)로 관리(결정 35). 아직 `orders`/`cart`와 연결되지 않은 독립 테이블(게스트 체크아웃 유지, 결정 6).
+- 전체 DDL: `commerce-core-schema.sql` 참고 (ERD Cloud Import > DDL 로 시각화 가능). `users`는 이후 마이그레이션(`CreateUsers`)으로 추가된 것이라 이 스냅샷엔 없음 — 결정 29대로 `src/migrations/`가 기준.
 
 ```sql
 CREATE TYPE order_status AS ENUM ('PENDING', 'PAID', 'SHIPPED', 'DELIVERED', 'CANCELLED');
@@ -443,6 +453,18 @@ CREATE TABLE order_items (
 - **재고현황**: `GET /admin/stock-overview` 응답을 `product.category` 기준으로 정렬해 반환(`categoryName` 필드 추가), 프론트엔드는 이미 정렬된 순서를 그대로 카테고리별 섹션으로 묶기만 하면 됨 — 카테고리 필터 드롭다운(한 번에 하나만 보임)은 전체 재고를 한눈에 파악하려는 목적(결정 14)과 어긋나 기각.
 - **재검토 트리거**: 없음(서버사이드로 처리해 별도 트리거 없이 확장 가능).
 
+### 35. 자체 회원가입/로그인 → 이메일+비밀번호, Redis 세션 + `X-Session-Token` 헤더
+
+- **배경**: 여러 결정(3, 6, 15)이 "로그인 도입 시점"을 재검토 트리거로 남겨뒀고, CLAUDE.md 상단 원칙("User 모델은 향후 기업 소속 사용자 확장(B2B)을 고려해 설계")도 있어 기반이 되는 회원가입/로그인부터 구현.
+- **세션 토큰 전달 방식 — 비교**: (a) httpOnly 쿠키 — 프론트(Cloudflare Pages)와 백엔드(Render)가 서로 다른 오리진이라 `SameSite=None; Secure` + CORS `credentials` 설정이 추가로 필요해 복잡도가 늘어남. 결정 7에서 "쿠키는 동의 절차·차단 설정으로 UX를 침해할 수 있어 선택하지 않는다"고 이미 정한 전례와도 같은 논리. (b) 커스텀 헤더(`X-Session-Token`) + localStorage(**선택**) — 기존 `X-Cart-Id`/`X-Admin-Token`과 동일한 패턴이라 일관성 있고, cross-origin 쿠키 설정 이슈 자체가 없음.
+- **비밀번호 해싱 — 비교**: `bcrypt`(네이티브, 약간 빠름) vs `bcryptjs`(순수 JS, 네이티브 빌드 없음, **선택**) — 결정 27에서 로컬/Docker 환경 차이로 배포가 크래시난 사고 이후 이 프로젝트가 유지해온 "환경 차이 리스크 최소화" 기조와 같은 이유.
+- **세션 저장소**: Redis(**선택**, 이미 인프라 있음) vs DB 테이블 — TTL(14일, 장바구니와 동일 기준·결정 3)이 기본 내장된 Redis가 세션 성격에 더 잘 맞음. 세션 키가 `session:{token}`으로 토큰 자체이지 사용자 ID가 아니라서, 같은 계정으로 여러 기기에서 로그인해도 기기마다 독립된 세션이 생기고(멀티 디바이스 로그인이 자연 지원), 로그아웃은 `redis.del`로 해당 세션만 즉시 무효화(JWT와 달리 블랙리스트 없이도 실제 무효화가 됨). 삭제는 멱등적으로 처리 — 이미 없는 토큰으로 로그아웃해도 에러 없음.
+- **스키마**: `users`(id, email UNIQUE, password_hash, name). B2B 확장용 `company_id`는 지금 추가하지 않음(아직 B2B 단계 아님, 결정 4와 같은 기준) — 필요해지면 nullable FK로 추가.
+- **가드**: `SessionGuard`(비동기로 Redis 조회 후 `request.user`에 채움) + `@CurrentUser()` 데코레이터로 보호 라우트에서 로그인 사용자 조회. `@SessionToken()` 데코레이터는 세션 조회 없이 헤더 값 자체가 필요한 로그아웃에서 사용.
+- **테스트**: `auth.service.spec.ts`(회원가입 중복/비밀번호 해싱 검증, 로그인 실패, 세션 발급/조회/삭제) + `test/app.e2e-spec.ts`에 회원가입→중복 가입 거부→로그인→틀린 비밀번호 거부→`/me`→세션 없이 401→로그아웃→로그아웃 후 같은 토큰으로 `/me` 401까지 이어지는 풀 라이프사이클 e2e 테스트 추가. 로컬 개발 DB/Redis로 curl 스모크 테스트까지 실행해 통과 확인(2026-08-20).
+- **이번 범위에서 제외(후속 이슈로 분리)**: 게스트 장바구니 → 로그인 사용자 장바구니 병합(결정 3의 재검토 트리거), 주문을 로그인 사용자 계정에 연결(현재 게스트 체크아웃 방식 유지), 관리자 SSE 사용자별 접근 제어(결정 15, 고객 로그인과는 별개 주제).
+- **재검토 트리거**: B2B(Phase 2) 진입 시점 → `users`에 `company_id` nullable FK 추가 검토.
+
 ### 테스트 데이터
 
 - `categories`: 신발, 상의, 하의
@@ -493,4 +515,5 @@ CREATE TABLE order_items (
 23. 남은 작업: 정식 k6 처리량 스크립트(`k6/throughput-test.js`)에 thresholds(p95<300ms, error_rate<1%) 명시해 pass/fail 자동 판정되도록 정리
 24. ~~배송 추적(송장번호/택배사 + 배송 단계 타임라인) 구현 + 주문~배송완료 풀 라이프사이클 e2e 테스트 (결정 33)~~ ✅ — 2026-08-20, 이슈 #59
 25. ~~관리자 대시보드 주문 상태별 서버사이드 페이지네이션/필터링 + 재고현황 카테고리 그룹화 (결정 34)~~ ✅ — 2026-08-20, 이슈 #61
-26. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
+26. ~~자체 회원가입/로그인 (이메일+비밀번호, Redis 세션) 구현 + 풀 라이프사이클 e2e 테스트 (결정 35)~~ ✅ — 2026-08-20, 이슈 #63
+27. 다음 기능 검토 중 — 게스트 장바구니→로그인 사용자 병합, 주문-계정 연결, Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
