@@ -8,6 +8,8 @@ import {
 } from 'typeorm';
 import { OrderStatus } from './order-status.enum';
 import { OrderItem } from './order-item.entity';
+import { DeliveryEvent } from './delivery-event.entity';
+import { Carrier } from './carrier.enum';
 
 @Entity('orders')
 export class Order {
@@ -63,8 +65,27 @@ export class Order {
   @Column({ name: 'payment_key', type: 'varchar', length: 200, nullable: true })
   paymentKey: string | null;
 
+  @Column({
+    name: 'tracking_number',
+    type: 'varchar',
+    length: 50,
+    nullable: true,
+  })
+  trackingNumber: string | null;
+
+  @Column({
+    type: 'enum',
+    enumName: 'carrier',
+    enum: Carrier,
+    nullable: true,
+  })
+  carrier: Carrier | null;
+
   @OneToMany(() => OrderItem, (item) => item.order)
   items: OrderItem[];
+
+  @OneToMany(() => DeliveryEvent, (event) => event.order)
+  deliveryEvents: DeliveryEvent[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
