@@ -7,6 +7,7 @@ import { AppModule } from './../src/app.module';
 import {
   CreateOrderResponse,
   OrderLookupResponse,
+  PaginatedMyOrders,
   ValidateStockResponse,
 } from '../src/orders/orders.types';
 import { RecentOrderItem } from '../src/admin/admin.types';
@@ -409,5 +410,135 @@ describe('게스트 장바구니 → 로그인 사용자 장바구니 병합 (e2
     const cartBody = cartRes.body as CartResponse;
     expect(cartBody.items).toHaveLength(1);
     expect(cartBody.items[0].quantity).toBe(5);
+  });
+});
+
+/**
+ * 로그인 사용자의 주문-계정 연결과 마이페이지(목록/상세)를 실제 AppModule(진짜
+ * DB/Redis)로 검증한다 — 이슈 #67. 다른 사용자의 주문을 상세 조회하면 존재
+ * 여부를 노출하지 않기 위해 404가 나는 것까지 함께 확인한다.
+ */
+describe('주문-계정 연결 + 마이페이지 (e2e)', () => {
+  let app: INestApplication<App>;
+  let dataSource: DataSource;
+  let categoryId: number;
+  let productId: number;
+  let productOptionId: number;
+  const emailA = 'e2e-mypage-a@example.com';
+  const emailB = 'e2e-mypage-b@example.com';
+
+  beforeEach(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.init();
+
+    dataSource = app.get(DataSource);
+
+    const [category] = await dataSource.query<{ id: string }[]>(
+      `INSERT INTO categories (name) VALUES ($1) RETURNING id`,
+      ['E2E마이페이지카테고리'],
+    );
+    categoryId = Number(category.id);
+
+    const [product] = await dataSource.query<{ id: string }[]>(
+      `INSERT INTO products (category_id, name, base_price) VALUES ($1, $2, $3) RETURNING id`,
+      [categoryId, 'E2E마이페이지상품', 10000],
+    );
+    productId = Number(product.id);
+
+    const [option] = await dataSource.query<{ id: string }[]>(
+      `INSERT INTO product_options (product_id, size, color, stock, sku) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [productId, 'M', '블랙', 50, `E2E-MYPAGE-SKU-${Date.now()}`],
+    );
+    productOptionId = Number(option.id);
+  });
+
+  afterEach(async () => {
+    await dataSource.query(
+      `DELETE FROM order_items WHERE product_option_id = $1`,
+      [productOptionId],
+    );
+    await dataSource.query(`DELETE FROM orders WHERE buyer_email IN ($1, $2)`, [
+      emailA,
+      emailB,
+    ]);
+    await dataSource.query(`DELETE FROM users WHERE email IN ($1, $2)`, [
+      emailA,
+      emailB,
+    ]);
+    await dataSource.query(`DELETE FROM product_options WHERE id = $1`, [
+      productOptionId,
+    ]);
+    await dataSource.query(`DELETE FROM products WHERE id = $1`, [productId]);
+    await dataSource.query(`DELETE FROM categories WHERE id = $1`, [
+      categoryId,
+    ]);
+
+    await app.close();
+  });
+
+  it('로그인 상태로 주문하면 마이페이지 목록/상세에 나타나고, 다른 사용자는 404를 받는다', async () => {
+    const server = app.getHttpServer();
+
+    const registerARes = await request(server)
+      .post('/auth/register')
+      .send({ email: emailA, password: 'password1234', name: '구매자A' })
+      .expect(201);
+    const { token: tokenA } = registerARes.body as AuthResponse;
+
+    const createRes = await request(server)
+      .post('/orders')
+      .set('X-Cart-Id', 'e2e-mypage-cart-a')
+      .set('X-Session-Token', tokenA)
+      .send({
+        buyerEmail: emailA,
+        buyerName: '구매자A',
+        buyerPhone: '010-1234-5678',
+        postalCode: '06236',
+        baseAddress: '서울시 강남구 테헤란로 123',
+        items: [{ productOptionId, quantity: 1 }],
+      })
+      .expect(201);
+    const { orderNumber } = createRes.body as CreateOrderResponse;
+
+    const myOrdersRes = await request(server)
+      .get('/orders/my')
+      .set('X-Session-Token', tokenA)
+      .expect(200);
+    const myOrdersBody = myOrdersRes.body as PaginatedMyOrders;
+    expect(myOrdersBody.items).toHaveLength(1);
+    expect(myOrdersBody.items[0].orderNumber).toBe(orderNumber);
+
+    const myOrderDetailRes = await request(server)
+      .get(`/orders/my/${orderNumber}`)
+      .set('X-Session-Token', tokenA)
+      .expect(200);
+    const detailBody = myOrderDetailRes.body as OrderLookupResponse;
+    expect(detailBody.orderNumber).toBe(orderNumber);
+    expect(detailBody.items).toHaveLength(1);
+
+    // 세션 없이는 401.
+    await request(server).get('/orders/my').expect(401);
+
+    // 다른 사용자로는 목록에 안 보이고, 상세 조회는 404(존재 여부 비노출).
+    const registerBRes = await request(server)
+      .post('/auth/register')
+      .send({ email: emailB, password: 'password1234', name: '구매자B' })
+      .expect(201);
+    const { token: tokenB } = registerBRes.body as AuthResponse;
+
+    const otherMyOrdersRes = await request(server)
+      .get('/orders/my')
+      .set('X-Session-Token', tokenB)
+      .expect(200);
+    expect((otherMyOrdersRes.body as PaginatedMyOrders).items).toHaveLength(0);
+
+    await request(server)
+      .get(`/orders/my/${orderNumber}`)
+      .set('X-Session-Token', tokenB)
+      .expect(404);
   });
 });
