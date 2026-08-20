@@ -1,3 +1,5 @@
+import { DeliveryEventItem } from '../../orders/orders.types';
+
 export interface StockUpdateEvent {
   productOptionId: number;
   productName: string;
@@ -12,6 +14,9 @@ export interface OrderUpdateEvent {
   buyerName: string;
   totalAmount: number;
   createdAt: Date;
+  trackingNumber?: string | null;
+  carrier?: string | null;
+  deliveryEvents?: DeliveryEventItem[];
 }
 
 export type DomainEvent =

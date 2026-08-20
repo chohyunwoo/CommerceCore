@@ -4,6 +4,7 @@ import { ProductOption } from '../products/entities/product-option.entity';
 import { Product } from '../products/entities/product.entity';
 import { Category } from '../products/entities/category.entity';
 import { Order } from '../orders/entities/order.entity';
+import { DeliveryEvent } from '../orders/entities/delivery-event.entity';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
 import { AdminGuard } from '../common/guards/admin.guard';
@@ -12,7 +13,13 @@ import { SupabaseStorageService } from './supabase-storage.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ProductOption, Product, Category, Order]),
+    TypeOrmModule.forFeature([
+      ProductOption,
+      Product,
+      Category,
+      Order,
+      DeliveryEvent,
+    ]),
     PaymentsModule,
   ],
   controllers: [AdminController],

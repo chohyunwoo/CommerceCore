@@ -47,7 +47,9 @@ export class AddDeliveryTracking1787188568809 implements MigrationInterface {
       `DROP INDEX IF EXISTS idx_delivery_events_order_id;`,
     );
     await queryRunner.query(`DROP TABLE IF EXISTS delivery_events;`);
-    await queryRunner.query(`ALTER TABLE orders DROP COLUMN IF EXISTS carrier;`);
+    await queryRunner.query(
+      `ALTER TABLE orders DROP COLUMN IF EXISTS carrier;`,
+    );
     await queryRunner.query(
       `ALTER TABLE orders DROP COLUMN IF EXISTS tracking_number;`,
     );

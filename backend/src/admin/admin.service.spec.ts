@@ -40,11 +40,13 @@ function createAdminService(order: Partial<Order> | null) {
   const paymentsService = { cancel: jest.fn().mockResolvedValue(undefined) };
   const productOptionRepository = { findOne: jest.fn() };
   const categoryRepository = { find: jest.fn(), findOne: jest.fn() };
+  const deliveryEventRepository = { find: jest.fn().mockResolvedValue([]) };
 
   const service = new AdminService(
     productOptionRepository as never,
     {} as never,
     categoryRepository as never,
+    deliveryEventRepository as never,
     dataSource as never,
     domainEvents as never,
     paymentsService as never,
@@ -58,6 +60,7 @@ function createAdminService(order: Partial<Order> | null) {
     paymentsService,
     productOptionRepository,
     categoryRepository,
+    deliveryEventRepository,
   };
 }
 
