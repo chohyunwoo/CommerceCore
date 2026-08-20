@@ -4,7 +4,9 @@ import { adminSseTicketKey } from '../session/admin-sse-ticket.util';
 import { AppException } from '../errors/app-exception';
 import { AppErrors } from '../errors/app-errors';
 
-function createContext(query: Record<string, string>): ExecutionContext {
+function createContext(
+  query: Record<string, string | string[]>,
+): ExecutionContext {
   const request = { query };
   return {
     switchToHttp: () => ({ getRequest: () => request }),
@@ -33,6 +35,14 @@ describe('AdminSseGuard', () => {
     const { guard, redis } = createGuard(1);
     await expectRejectedWithAdminAuthRequired(
       guard.canActivate(createContext({})),
+    );
+    expect(redis.del).not.toHaveBeenCalled();
+  });
+
+  it('ticket 쿼리 파라미터가 중복 전달되어 배열이면 거부한다', async () => {
+    const { guard, redis } = createGuard(1);
+    await expectRejectedWithAdminAuthRequired(
+      guard.canActivate(createContext({ ticket: ['a', 'b'] })),
     );
     expect(redis.del).not.toHaveBeenCalled();
   });

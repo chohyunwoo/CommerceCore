@@ -92,6 +92,25 @@ describe('SupabaseStorageService.uploadImage', () => {
     expect(uploadMock).toHaveBeenCalledTimes(1);
   });
 
+  it('저장 경로의 확장자는 파일명이 아니라 검증된 MIME 타입에서 정해진다', async () => {
+    const service = createService();
+    uploadMock.mockResolvedValue({ error: null });
+    getPublicUrlMock.mockReturnValue({
+      data: { publicUrl: 'https://x/y.png' },
+    });
+
+    // originalname에 임의 문자열("php", 확장자 없음 등)을 넣어도 mimetype만 신뢰한다.
+    await service.uploadImage(
+      buildFile({ originalname: 'evil.php', mimetype: 'image/png' }),
+    );
+
+    expect(uploadMock).toHaveBeenCalledWith(
+      expect.stringMatching(/^products\/[^/]+\.png$/),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it('Supabase가 에러를 반환하면 IMAGE_UPLOAD_FAILED를 던진다', async () => {
     const service = createService();
     uploadMock.mockResolvedValue({ error: { message: 'bucket not found' } });

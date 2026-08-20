@@ -23,7 +23,8 @@ export class AdminSseGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
-    const ticket = (request.query as Record<string, string>)['ticket'];
+    const rawTicket = request.query['ticket'];
+    const ticket = typeof rawTicket === 'string' ? rawTicket : undefined;
 
     if (!ticket) {
       throw new AppException(AppErrors.ADMIN_AUTH_REQUIRED);
