@@ -125,6 +125,22 @@ export interface OrderLookupResult {
   items: OrderLookupItem[];
 }
 
+export interface MyOrderItem {
+  orderNumber: string;
+  status: string;
+  totalAmount: number;
+  createdAt: string;
+  trackingNumber: string | null;
+  carrier: string | null;
+}
+
+export interface PaginatedMyOrders {
+  items: MyOrderItem[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
 export interface StockOverviewItem {
   productOptionId: number;
   productName: string;

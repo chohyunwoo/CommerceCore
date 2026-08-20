@@ -11,6 +11,8 @@ import { PaymentSuccessPage } from './pages/PaymentSuccessPage';
 import { PaymentFailPage } from './pages/PaymentFailPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { MyPage } from './pages/MyPage';
+import { MyOrderDetailPage } from './pages/MyOrderDetailPage';
 import { prefetchImageEmbeddingModel } from './lib/imageEmbedding';
 import { useAuth } from './context/AuthContext';
 import './App.css';
@@ -26,6 +28,7 @@ function AuthHeaderLinks() {
 
   return (
     <>
+      <Link to="/my">마이페이지</Link>
       <span className="header-username">{user.name}님</span>
       <button type="button" className="header-logout-btn" onClick={() => void logout()}>
         로그아웃
@@ -67,6 +70,8 @@ function App() {
           <Route path="/payment/fail" element={<PaymentFailPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/my" element={<MyPage />} />
+          <Route path="/my/orders/:orderNumber" element={<MyOrderDetailPage />} />
         </Routes>
       </main>
     </>
