@@ -17,13 +17,17 @@ async function bootstrap() {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Commerce Core API')
     .setDescription(
-      '이커머스 포트폴리오 프로젝트 API 명세. 장바구니/주문 요청은 X-Cart-Id, 관리자 요청은 X-Admin-Token 헤더가 필요합니다.',
+      '이커머스 포트폴리오 프로젝트 API 명세. 장바구니/주문 요청은 X-Cart-Id, 관리자 요청은 X-Admin-Token, 로그인 사용자 요청은 X-Session-Token 헤더가 필요합니다.',
     )
     .setVersion('1.0')
     .addApiKey({ type: 'apiKey', in: 'header', name: 'X-Cart-Id' }, 'cart-id')
     .addApiKey(
       { type: 'apiKey', in: 'header', name: 'X-Admin-Token' },
       'admin-token',
+    )
+    .addApiKey(
+      { type: 'apiKey', in: 'header', name: 'X-Session-Token' },
+      'session-token',
     )
     .build();
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
