@@ -2,6 +2,7 @@ import { apiGet, apiPatch, apiPost, apiPostForm } from './client';
 import type {
   CategoryItem,
   CreateProductPayload,
+  PaginatedRecentOrders,
   Product,
   RecentOrderItem,
   StockOverviewItem,
@@ -20,8 +21,17 @@ export function fetchStockOverview(): Promise<StockOverviewItem[]> {
   return apiGet<StockOverviewItem[]>('/admin/stock-overview', adminHeaders());
 }
 
-export function fetchRecentOrders(): Promise<RecentOrderItem[]> {
-  return apiGet<RecentOrderItem[]>('/admin/orders/recent', adminHeaders());
+export function fetchRecentOrders(
+  status?: string,
+  page = 1,
+  limit = 20,
+): Promise<PaginatedRecentOrders> {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (status) params.set('status', status);
+  return apiGet<PaginatedRecentOrders>(
+    `/admin/orders/recent?${params.toString()}`,
+    adminHeaders(),
+  );
 }
 
 export function updateOrderStatus(
