@@ -1,0 +1,160 @@
+import * as bcrypt from 'bcryptjs';
+import { AuthService } from './auth.service';
+import { User } from './entities/user.entity';
+import { AppException } from '../common/errors/app-exception';
+import { AppErrors, AppErrorDefinition } from '../common/errors/app-errors';
+
+async function expectAppError(
+  promise: Promise<unknown>,
+  def: AppErrorDefinition,
+) {
+  await expect(promise).rejects.toBeInstanceOf(AppException);
+  try {
+    await promise;
+    throw new Error('expected promise to reject');
+  } catch (err) {
+    const body = (err as AppException).getResponse() as {
+      code: string;
+      statusCode: number;
+    };
+    expect(body.code).toBe(def.code);
+    expect(body.statusCode).toBe(def.status);
+  }
+}
+
+function createAuthService(existingUser: Partial<User> | null) {
+  const userRepository = {
+    findOne: jest.fn().mockResolvedValue(existingUser),
+    create: jest.fn((data: Partial<User>) => ({ ...data })),
+    save: jest.fn((data: Partial<User>) => Promise.resolve({ id: 1, ...data })),
+  };
+  const redis = {
+    get: jest.fn(),
+    set: jest.fn().mockResolvedValue('OK'),
+    del: jest.fn().mockResolvedValue(1),
+  };
+
+  const service = new AuthService(userRepository as never, redis as never);
+
+  return { service, userRepository, redis };
+}
+
+describe('AuthService.register', () => {
+  it('이미 가입된 이메일이면 EMAIL_ALREADY_EXISTS를 던진다', async () => {
+    const { service } = createAuthService({ id: 1, email: 'a@b.com' });
+
+    await expectAppError(
+      service.register({
+        email: 'a@b.com',
+        password: 'password1234',
+        name: '홍길동',
+      }),
+      AppErrors.EMAIL_ALREADY_EXISTS,
+    );
+  });
+
+  it('정상 가입 시 비밀번호를 해싱해 저장하고 세션을 발급한다', async () => {
+    const { service, userRepository, redis } = createAuthService(null);
+
+    const result = await service.register({
+      email: 'a@b.com',
+      password: 'password1234',
+      name: '홍길동',
+    });
+
+    expect(result.user).toEqual({ id: 1, email: 'a@b.com', name: '홍길동' });
+    expect(result.token).toBeTruthy();
+
+    const savedArg = userRepository.save.mock.calls[0][0] as {
+      passwordHash: string;
+    };
+    expect(savedArg.passwordHash).not.toBe('password1234');
+    expect(await bcrypt.compare('password1234', savedArg.passwordHash)).toBe(
+      true,
+    );
+
+    expect(redis.set).toHaveBeenCalledWith(
+      `session:${result.token}`,
+      JSON.stringify({ userId: 1, email: 'a@b.com', name: '홍길동' }),
+      'EX',
+      60 * 60 * 24 * 14,
+    );
+  });
+});
+
+describe('AuthService.login', () => {
+  it('존재하지 않는 이메일이면 INVALID_CREDENTIALS를 던진다', async () => {
+    const { service } = createAuthService(null);
+
+    await expectAppError(
+      service.login({ email: 'a@b.com', password: 'password1234' }),
+      AppErrors.INVALID_CREDENTIALS,
+    );
+  });
+
+  it('비밀번호가 틀리면 INVALID_CREDENTIALS를 던진다', async () => {
+    const passwordHash = await bcrypt.hash('correct-password', 10);
+    const { service } = createAuthService({
+      id: 1,
+      email: 'a@b.com',
+      passwordHash,
+      name: '홍길동',
+    });
+
+    await expectAppError(
+      service.login({ email: 'a@b.com', password: 'wrong-password' }),
+      AppErrors.INVALID_CREDENTIALS,
+    );
+  });
+
+  it('정상 로그인이면 세션을 발급한다', async () => {
+    const passwordHash = await bcrypt.hash('correct-password', 10);
+    const { service, redis } = createAuthService({
+      id: 1,
+      email: 'a@b.com',
+      passwordHash,
+      name: '홍길동',
+    });
+
+    const result = await service.login({
+      email: 'a@b.com',
+      password: 'correct-password',
+    });
+
+    expect(result.user).toEqual({ id: 1, email: 'a@b.com', name: '홍길동' });
+    expect(redis.set).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('AuthService.logout', () => {
+  it('세션 키를 삭제한다', async () => {
+    const { service, redis } = createAuthService(null);
+
+    await service.logout('some-token');
+
+    expect(redis.del).toHaveBeenCalledWith('session:some-token');
+  });
+});
+
+describe('AuthService.getCurrentUser / resolveSession', () => {
+  it('세션이 없으면 SESSION_REQUIRED를 던진다', async () => {
+    const { service, redis } = createAuthService(null);
+    redis.get.mockResolvedValue(null);
+
+    await expectAppError(
+      service.getCurrentUser('missing-token'),
+      AppErrors.SESSION_REQUIRED,
+    );
+  });
+
+  it('세션이 있으면 사용자 정보를 반환한다', async () => {
+    const { service, redis } = createAuthService(null);
+    redis.get.mockResolvedValue(
+      JSON.stringify({ userId: 1, email: 'a@b.com', name: '홍길동' }),
+    );
+
+    const result = await service.getCurrentUser('valid-token');
+
+    expect(result).toEqual({ id: 1, email: 'a@b.com', name: '홍길동' });
+  });
+});
