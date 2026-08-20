@@ -33,10 +33,17 @@ function createAuthService(existingUser: Partial<User> | null) {
     set: jest.fn().mockResolvedValue('OK'),
     del: jest.fn().mockResolvedValue(1),
   };
+  const cartService = {
+    mergeGuestCartIntoUser: jest.fn().mockResolvedValue(undefined),
+  };
 
-  const service = new AuthService(userRepository as never, redis as never);
+  const service = new AuthService(
+    userRepository as never,
+    redis as never,
+    cartService as never,
+  );
 
-  return { service, userRepository, redis };
+  return { service, userRepository, redis, cartService };
 }
 
 describe('AuthService.register', () => {
@@ -79,6 +86,32 @@ describe('AuthService.register', () => {
       'EX',
       60 * 60 * 24 * 14,
     );
+  });
+
+  it('cartId가 있으면 게스트 장바구니를 병합한다', async () => {
+    const { service, cartService } = createAuthService(null);
+
+    const result = await service.register(
+      { email: 'a@b.com', password: 'password1234', name: '홍길동' },
+      'guest-cart-1',
+    );
+
+    expect(cartService.mergeGuestCartIntoUser).toHaveBeenCalledWith(
+      'guest-cart-1',
+      result.user.id,
+    );
+  });
+
+  it('cartId가 없으면 장바구니 병합을 시도하지 않는다', async () => {
+    const { service, cartService } = createAuthService(null);
+
+    await service.register({
+      email: 'a@b.com',
+      password: 'password1234',
+      name: '홍길동',
+    });
+
+    expect(cartService.mergeGuestCartIntoUser).not.toHaveBeenCalled();
   });
 });
 
@@ -123,6 +156,26 @@ describe('AuthService.login', () => {
 
     expect(result.user).toEqual({ id: 1, email: 'a@b.com', name: '홍길동' });
     expect(redis.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('cartId가 있으면 게스트 장바구니를 병합한다', async () => {
+    const passwordHash = await bcrypt.hash('correct-password', 10);
+    const { service, cartService } = createAuthService({
+      id: 1,
+      email: 'a@b.com',
+      passwordHash,
+      name: '홍길동',
+    });
+
+    await service.login(
+      { email: 'a@b.com', password: 'correct-password' },
+      'guest-cart-1',
+    );
+
+    expect(cartService.mergeGuestCartIntoUser).toHaveBeenCalledWith(
+      'guest-cart-1',
+      1,
+    );
   });
 });
 
