@@ -27,8 +27,26 @@ export function fetchRecentOrders(): Promise<RecentOrderItem[]> {
 export function updateOrderStatus(
   orderNumber: string,
   status: string,
+  trackingNumber?: string,
+  carrier?: string,
 ): Promise<RecentOrderItem> {
-  return apiPatch<RecentOrderItem>(`/admin/orders/${orderNumber}/status`, { status }, adminHeaders());
+  return apiPatch<RecentOrderItem>(
+    `/admin/orders/${orderNumber}/status`,
+    { status, trackingNumber, carrier },
+    adminHeaders(),
+  );
+}
+
+export function addDeliveryEvent(
+  orderNumber: string,
+  stage: string,
+  location?: string,
+): Promise<RecentOrderItem> {
+  return apiPost<RecentOrderItem>(
+    `/admin/orders/${orderNumber}/delivery-events`,
+    { stage, location },
+    adminHeaders(),
+  );
 }
 
 export function fetchCategories(): Promise<CategoryItem[]> {

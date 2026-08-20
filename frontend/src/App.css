@@ -866,6 +866,81 @@
   color: #fff;
 }
 
+/* Shipping form (송장번호/택배사 입력) */
+.shipping-form {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.shipping-form-input,
+.shipping-form-select {
+  padding: 4px 8px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.shipping-form-input {
+  width: 120px;
+}
+
+/* Delivery timeline */
+.delivery-detail-row td {
+  padding-top: 0;
+  padding-bottom: 16px;
+}
+
+.delivery-panel {
+  background: var(--bg-alt, rgba(128, 128, 128, 0.06));
+  padding: 12px 16px;
+}
+
+.delivery-tracking-info {
+  font-size: 12px;
+  color: var(--text-sub);
+  margin-bottom: 8px;
+}
+
+.delivery-timeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.delivery-timeline li.done {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.delivery-event-meta {
+  font-weight: 400;
+  color: var(--text-sub);
+  margin-left: 4px;
+}
+
+.delivery-next-stage {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.delivery-location-input {
+  padding: 4px 8px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  width: 220px;
+}
+
 /* Admin login */
 #admin-login {
   display: flex;

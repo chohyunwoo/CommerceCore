@@ -1,16 +1,23 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { API_BASE_URL, ApiError } from '../api/client';
-import { fetchRecentOrders, fetchStockOverview, updateOrderStatus } from '../api/admin';
+import {
+  addDeliveryEvent,
+  fetchRecentOrders,
+  fetchStockOverview,
+  updateOrderStatus,
+} from '../api/admin';
 import type { RecentOrderItem, StockOverviewItem } from '../api/types';
 
 const RECENT_ORDERS_LIMIT = 20;
 
 type OrderStatus = 'PENDING' | 'PAID' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
+type DeliveryStage = 'COLLECTED' | 'IN_TRANSIT' | 'OUT_FOR_DELIVERY' | 'DELIVERED';
 
 interface NextAction {
   label: string;
   status: OrderStatus;
   variant: 'primary' | 'danger';
+  requiresTracking?: boolean;
 }
 
 const NEXT_ACTIONS: Record<OrderStatus, NextAction[]> = {
@@ -19,10 +26,16 @@ const NEXT_ACTIONS: Record<OrderStatus, NextAction[]> = {
     { label: '취소', status: 'CANCELLED', variant: 'danger' },
   ],
   PAID: [
-    { label: '배송 시작', status: 'SHIPPED', variant: 'primary' },
+    {
+      label: '배송 시작',
+      status: 'SHIPPED',
+      variant: 'primary',
+      requiresTracking: true,
+    },
     { label: '취소', status: 'CANCELLED', variant: 'danger' },
   ],
-  SHIPPED: [{ label: '배송 완료', status: 'DELIVERED', variant: 'primary' }],
+  // SHIPPED 이후로는 상태를 직접 바꾸지 않는다 — 배송 단계 타임라인 기록으로만 진행된다.
+  SHIPPED: [],
   DELIVERED: [],
   CANCELLED: [],
 };
@@ -33,6 +46,22 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
   SHIPPED: '배송 중',
   DELIVERED: '배송 완료',
   CANCELLED: '취소됨',
+};
+
+const CARRIER_OPTIONS = ['CJ대한통운', '한진택배', '로젠택배', '우체국택배', '기타'];
+
+const DELIVERY_STAGE_ORDER: DeliveryStage[] = [
+  'COLLECTED',
+  'IN_TRANSIT',
+  'OUT_FOR_DELIVERY',
+  'DELIVERED',
+];
+
+const DELIVERY_STAGE_LABEL: Record<DeliveryStage, string> = {
+  COLLECTED: '집화완료',
+  IN_TRANSIT: '간선상차',
+  OUT_FOR_DELIVERY: '배송출발',
+  DELIVERED: '배송완료',
 };
 
 interface Props {
@@ -46,6 +75,13 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [shippingForm, setShippingForm] = useState<{
+    orderNumber: string;
+    trackingNumber: string;
+    carrier: string;
+  } | null>(null);
+  const [locationDraft, setLocationDraft] = useState<Record<string, string>>({});
+  const [recordingStage, setRecordingStage] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([fetchStockOverview(), fetchRecentOrders()])
@@ -112,6 +148,43 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
     }
   }
 
+  async function handleConfirmShipping() {
+    if (!shippingForm) return;
+    const { orderNumber, trackingNumber, carrier } = shippingForm;
+    setUpdating(orderNumber);
+    try {
+      await updateOrderStatus(orderNumber, 'SHIPPED', trackingNumber, carrier);
+      setShippingForm(null);
+      if (!connected) {
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.orderNumber === orderNumber
+              ? { ...o, status: 'SHIPPED', trackingNumber, carrier }
+              : o,
+          ),
+        );
+      }
+    } finally {
+      setUpdating(null);
+    }
+  }
+
+  async function handleRecordStage(orderNumber: string, stage: DeliveryStage) {
+    setRecordingStage(orderNumber);
+    try {
+      const location = locationDraft[orderNumber]?.trim() || undefined;
+      const updated = await addDeliveryEvent(orderNumber, stage, location);
+      setLocationDraft((prev) => ({ ...prev, [orderNumber]: '' }));
+      if (!connected) {
+        setOrders((prev) =>
+          prev.map((o) => (o.orderNumber === orderNumber ? updated : o)),
+        );
+      }
+    } finally {
+      setRecordingStage(null);
+    }
+  }
+
   if (loading) {
     return (
       <section id="admin-dashboard">
@@ -171,36 +244,169 @@ export function AdminDashboardPage({ token, onAuthError }: Props) {
             const status = order.status as OrderStatus;
             const actions = NEXT_ACTIONS[status] ?? [];
             const isUpdating = updating === order.orderNumber;
+            const isShippingForm = shippingForm?.orderNumber === order.orderNumber;
+            const nextStage =
+              status === 'SHIPPED'
+                ? DELIVERY_STAGE_ORDER[order.deliveryEvents.length]
+                : undefined;
+            const hasDeliveryInfo =
+              Boolean(order.trackingNumber) || order.deliveryEvents.length > 0;
 
             return (
-              <tr key={order.orderNumber}>
-                <td>{order.orderNumber}</td>
-                <td>
-                  <span className={`order-status-badge status-${status.toLowerCase()}`}>
-                    {STATUS_LABEL[status] ?? status}
-                  </span>
-                </td>
-                <td>{order.buyerName}</td>
-                <td>{order.totalAmount.toLocaleString()}원</td>
-                <td>{new Date(order.createdAt).toLocaleTimeString()}</td>
-                <td>
-                  <div className="order-actions">
-                    {actions.map((action) => (
-                      <button
-                        key={action.status}
-                        type="button"
-                        className={`order-action-btn ${action.variant}`}
-                        disabled={isUpdating}
-                        onClick={() =>
-                          void handleStatusChange(order.orderNumber, action.status)
-                        }
+              <Fragment key={order.orderNumber}>
+                <tr>
+                  <td>{order.orderNumber}</td>
+                  <td>
+                    <span className={`order-status-badge status-${status.toLowerCase()}`}>
+                      {STATUS_LABEL[status] ?? status}
+                    </span>
+                  </td>
+                  <td>{order.buyerName}</td>
+                  <td>{order.totalAmount.toLocaleString()}원</td>
+                  <td>{new Date(order.createdAt).toLocaleTimeString()}</td>
+                  <td>
+                    {isShippingForm ? (
+                      <form
+                        className="shipping-form"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void handleConfirmShipping();
+                        }}
                       >
-                        {isUpdating ? '...' : action.label}
-                      </button>
-                    ))}
-                  </div>
-                </td>
-              </tr>
+                        <input
+                          className="shipping-form-input"
+                          type="text"
+                          required
+                          placeholder="송장번호"
+                          value={shippingForm.trackingNumber}
+                          onChange={(e) =>
+                            setShippingForm((prev) =>
+                              prev
+                                ? { ...prev, trackingNumber: e.target.value }
+                                : prev,
+                            )
+                          }
+                        />
+                        <select
+                          className="shipping-form-select"
+                          value={shippingForm.carrier}
+                          onChange={(e) =>
+                            setShippingForm((prev) =>
+                              prev ? { ...prev, carrier: e.target.value } : prev,
+                            )
+                          }
+                        >
+                          {CARRIER_OPTIONS.map((carrier) => (
+                            <option key={carrier} value={carrier}>
+                              {carrier}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="submit"
+                          className="order-action-btn primary"
+                          disabled={isUpdating}
+                        >
+                          {isUpdating ? '...' : '확인'}
+                        </button>
+                        <button
+                          type="button"
+                          className="order-action-btn"
+                          onClick={() => setShippingForm(null)}
+                        >
+                          취소
+                        </button>
+                      </form>
+                    ) : (
+                      <div className="order-actions">
+                        {actions.map((action) => (
+                          <button
+                            key={action.status}
+                            type="button"
+                            className={`order-action-btn ${action.variant}`}
+                            disabled={isUpdating}
+                            onClick={() => {
+                              if (action.requiresTracking) {
+                                setShippingForm({
+                                  orderNumber: order.orderNumber,
+                                  trackingNumber: '',
+                                  carrier: CARRIER_OPTIONS[0],
+                                });
+                              } else {
+                                void handleStatusChange(
+                                  order.orderNumber,
+                                  action.status,
+                                );
+                              }
+                            }}
+                          >
+                            {isUpdating ? '...' : action.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+                {hasDeliveryInfo && (
+                  <tr className="delivery-detail-row">
+                    <td colSpan={6}>
+                      <div className="delivery-panel">
+                        {order.trackingNumber && (
+                          <p className="delivery-tracking-info">
+                            {order.carrier} · {order.trackingNumber}
+                          </p>
+                        )}
+                        <ol className="delivery-timeline">
+                          {DELIVERY_STAGE_ORDER.map((stage) => {
+                            const event = order.deliveryEvents.find(
+                              (e) => e.stage === stage,
+                            );
+                            return (
+                              <li key={stage} className={event ? 'done' : ''}>
+                                {DELIVERY_STAGE_LABEL[stage]}
+                                {event && (
+                                  <span className="delivery-event-meta">
+                                    {event.location ? ` · ${event.location}` : ''} (
+                                    {new Date(event.occurredAt).toLocaleString()})
+                                  </span>
+                                )}
+                              </li>
+                            );
+                          })}
+                        </ol>
+                        {nextStage && (
+                          <div className="delivery-next-stage">
+                            <input
+                              className="delivery-location-input"
+                              type="text"
+                              placeholder="위치 (선택, 예: 서울 동부 터미널)"
+                              value={locationDraft[order.orderNumber] ?? ''}
+                              onChange={(e) =>
+                                setLocationDraft((prev) => ({
+                                  ...prev,
+                                  [order.orderNumber]: e.target.value,
+                                }))
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="order-action-btn primary"
+                              disabled={recordingStage === order.orderNumber}
+                              onClick={() =>
+                                void handleRecordStage(order.orderNumber, nextStage)
+                              }
+                            >
+                              {recordingStage === order.orderNumber
+                                ? '...'
+                                : `${DELIVERY_STAGE_LABEL[nextStage]} 기록`}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             );
           })}
         </tbody>
