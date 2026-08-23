@@ -1,0 +1,45 @@
+name: keep-warm
+
+# Render 무료 티어는 15분간 요청이 없으면 인스턴스를 내리고(spin down), 다음 요청은
+# 콜드스타트로 30초~1분 걸린다(실측: 잠자던 백엔드 첫 요청 약 22초). 배포된 백엔드를
+# 주기적으로 핑해 깨어 있게 유지한다.
+#
+# 주의사항:
+# - GitHub Actions의 schedule은 실행이 지연/누락될 수 있어(GitHub 공지) 15분 창을
+#   100% 보장하진 않는다. repo 60일 무활동 시 스케줄이 자동 비활성화된다.
+# - CommerceCore는 PUBLIC repo라 Actions 분은 무제한(비용 이슈 없음).
+# - 진짜 상한은 Render 무료 티어의 "월 750 instance-hours(무료 서비스 공유)"다.
+#   서비스를 24/7로 warm하면 ~730h라, 무료 서비스가 2개(CommerceCore+SpotScore)면
+#   합계 ~1,460h로 750h를 초과해 월 중순쯤 정지된다. 그래서 24/7이 아니라 활동
+#   시간대(하루 ~12h)만 핑해 두 서비스 합계를 ~720h로 유지한다.
+
+on:
+  schedule:
+    # cron은 UTC 기준. '1-12'(UTC 01~12시)는 KST 10~22시대 ≈ 하루 12시간 → 월 ~360h.
+    - cron: '*/10 1-12 * * *'
+  workflow_dispatch: {} # 시간대 밖에서도 필요하면 수동 실행
+
+# 밀린 스케줄이 겹쳐 실행되는 것을 막는다(가장 최근 것만 유지).
+concurrency:
+  group: keep-warm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping CommerceCore backend
+        run: |
+          URL="https://commerce-core-backend.onrender.com/health"
+          echo "Pinging $URL"
+          # 콜드스타트(최대 ~1분) 대비 타임아웃 여유 + 재시도. 핑 실패는 워크플로우를
+          # 실패시키지 않는다(일시적 장애로 알림이 쌓이는 것을 방지).
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            --max-time 90 --retry 3 --retry-delay 10 --retry-all-errors "$URL" || echo "000")
+          echo "HTTP $code"
+          if [ "$code" = "200" ]; then
+            echo "warm ✅"
+          else
+            echo "::warning::keep-warm ping returned $code (non-fatal)"
+          fi
