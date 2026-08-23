@@ -10,8 +10,10 @@ name: keep-warm
 #   핑 간격은 잡 내부 sleep으로 정확히 보장한다. 러너의 sleep은 정확히 지켜지기 때문.
 #
 # 시간대/쿼터:
-#   - cron은 UTC 기준. '0 1-12'(UTC 01~12시 정각 트리거) + 각 잡이 ~1시간 warm
-#     → KST 10:00~22:00을 커버(하루 ~12시간).
+#   - cron은 UTC 기준. '0 1-12'(UTC 01~12시 정각 트리거) + 각 잡이 ~70분 warm
+#     → KST 10:00~22:00을 커버(하루 ~12시간). 잡을 60분이 아니라 70분 돌려, 다음 정시
+#       잡과 ~10분 겹치게(overlap) 한다 → GitHub 트리거가 다소 지연돼도 경계에서 갭이
+#       안 생긴다(마지막 잡은 KST 22시대까지 ~10분 넘어가나 무시할 수준).
 #   - Render 무료 750 instance-hours가 계정 내 무료 서비스끼리 공유되어도, 12h×2서비스×30일
 #     ≈ 720h로 750h 안에 든다(서비스별 한도라면 여유가 더 크다).
 #   - PUBLIC repo라 Actions 분은 무제한(sleep 루프 시간은 비용에 잡히지 않음).
@@ -24,12 +26,12 @@ on:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 66
+    timeout-minutes: 72
     steps:
       - name: Keep backend warm (~1h, ping every 5 min)
         run: |
           URL="https://commerce-core-backend.onrender.com/health"
-          end=$((SECONDS + 3600)) # 약 1시간 동안 반복
+          end=$((SECONDS + 4200)) # 약 70분 반복(다음 정시 잡과 ~10분 겹쳐 경계 갭 방지)
           while [ "$SECONDS" -lt "$end" ]; do
             # 콜드스타트(최대 ~1분) 대비 타임아웃/재시도. 핑 실패는 루프를 멈추지 않는다.
             code=$(curl -sS -o /dev/null -w "%{http_code}" \
