@@ -107,7 +107,10 @@ describe('SupabaseStorageService.uploadImage', () => {
     expect(uploadMock).toHaveBeenCalledWith(
       expect.stringMatching(/^products\/[^/]+\.png$/),
       expect.anything(),
-      expect.anything(),
+      expect.objectContaining({
+        contentType: 'image/png',
+        cacheControl: '31536000',
+      }),
     );
   });
 

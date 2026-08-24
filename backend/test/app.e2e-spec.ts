@@ -487,6 +487,47 @@ describe('관리자 상품 관리 (e2e)', () => {
     expect(list.items.some((p) => p.id === productId)).toBe(false);
   });
 
+  it('소프트 삭제된 상품의 SKU는 다른 상품에서 재사용할 수 있다(대안 B)', async () => {
+    const server = app.getHttpServer();
+
+    // 같은 카테고리에 두 번째 상품을 만든다.
+    const [product2] = await dataSource.query<{ id: string }[]>(
+      `INSERT INTO products (category_id, name, base_price) VALUES ($1, $2, $3) RETURNING id`,
+      [categoryId, 'E2E상품관리테스트2', 20000],
+    );
+    const product2Id = Number(product2.id);
+
+    try {
+      // 1번 상품을 소프트 삭제 → 그 옵션의 sku가 부분 유니크에서 빠진다.
+      await request(server)
+        .delete(`/admin/products/${productId}`)
+        .set('X-Session-Token', adminToken)
+        .expect(200);
+
+      // 삭제된 상품이 쓰던 sku를 2번 상품에 재사용 → 성공(201).
+      await request(server)
+        .post(`/admin/products/${product2Id}/options`)
+        .set('X-Session-Token', adminToken)
+        .send({ size: 'M', color: '블랙', stock: 5, sku })
+        .expect(201);
+
+      // 그러나 2번 상품에서 방금 쓴(활성) sku를 또 쓰면 409.
+      await request(server)
+        .post(`/admin/products/${product2Id}/options`)
+        .set('X-Session-Token', adminToken)
+        .send({ size: 'L', color: '화이트', stock: 1, sku })
+        .expect(409);
+    } finally {
+      await dataSource.query(
+        `DELETE FROM product_options WHERE product_id = $1`,
+        [product2Id],
+      );
+      await dataSource.query(`DELETE FROM products WHERE id = $1`, [
+        product2Id,
+      ]);
+    }
+  });
+
   it('재입고와 옵션 추가가 반영되고, 중복 SKU는 거부된다', async () => {
     const server = app.getHttpServer();
 

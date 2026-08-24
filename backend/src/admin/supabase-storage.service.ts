@@ -66,7 +66,12 @@ export class SupabaseStorageService {
 
     const { error } = await client.storage
       .from(this.bucket)
-      .upload(path, file.buffer, { contentType: file.mimetype });
+      // 경로에 타임스탬프+uuid가 들어가 URL이 불변(내용이 바뀌면 새 URL)이므로
+      // 브라우저 캐시를 길게(1년) 잡아도 안전하다 — 재다운로드/트래픽을 줄인다.
+      .upload(path, file.buffer, {
+        contentType: file.mimetype,
+        cacheControl: '31536000',
+      });
 
     if (error) {
       this.logger.error(`Supabase Storage 업로드 실패: ${error.message}`);

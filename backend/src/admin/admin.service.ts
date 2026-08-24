@@ -128,8 +128,9 @@ export class AdminService {
       );
     }
 
+    // 활성 옵션의 SKU만 중복으로 본다 — 소프트 삭제된 옵션의 SKU는 재사용 허용(이슈 #92).
     const duplicateSku = await this.productOptionRepository.findOne({
-      where: { sku: In(skus) },
+      where: { sku: In(skus), isActive: true },
     });
     if (duplicateSku) {
       throw new AppException(
@@ -476,19 +477,29 @@ export class AdminService {
     };
   }
 
-  /** 상품 소프트 삭제 — is_active=false로만 바꾼다(하드 삭제 X, 주문 이력 보존, 이슈 #88). */
+  /**
+   * 상품 소프트 삭제 — is_active=false로만 바꾼다(하드 삭제 X, 주문 이력 보존, 이슈 #88).
+   * 옵션도 함께 비활성화해 SKU가 부분 유니크 인덱스에서 빠져 재사용 가능해진다(이슈 #92).
+   */
   async softDeleteProduct(id: number): Promise<void> {
-    const product = await this.productRepository.findOne({
-      where: { id, isActive: true },
-    });
-    if (!product) {
-      throw new AppException(
-        AppErrors.PRODUCT_NOT_FOUND,
-        `상품(id: ${id})을 찾을 수 없습니다.`,
+    await this.dataSource.transaction(async (manager) => {
+      const product = await manager.findOne(Product, {
+        where: { id, isActive: true },
+      });
+      if (!product) {
+        throw new AppException(
+          AppErrors.PRODUCT_NOT_FOUND,
+          `상품(id: ${id})을 찾을 수 없습니다.`,
+        );
+      }
+      product.isActive = false;
+      await manager.save(product);
+      await manager.update(
+        ProductOption,
+        { productId: id },
+        { isActive: false },
       );
-    }
-    product.isActive = false;
-    await this.productRepository.save(product);
+    });
   }
 
   /** 재입고 — 옵션 재고를 절대값으로 덮어쓰고 SSE로 재고 화면에 실시간 반영(이슈 #88). */
@@ -547,7 +558,7 @@ export class AdminService {
     }
 
     const duplicate = await this.productOptionRepository.findOne({
-      where: { sku: dto.sku },
+      where: { sku: dto.sku, isActive: true },
     });
     if (duplicate) {
       throw new AppException(
