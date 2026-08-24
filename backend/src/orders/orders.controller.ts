@@ -15,6 +15,7 @@ import { CartId } from '../common/decorators/cart-id.decorator';
 import { ValidateStockDto } from './dto/validate-stock.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { LookupOrderQueryDto } from './dto/lookup-order-query.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { SessionGuard } from '../auth/guards/session.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { CurrentUser as CurrentUserData } from '../auth/auth.types';
@@ -57,14 +58,9 @@ export class OrdersController {
   @Get('my')
   getMyOrders(
     @CurrentUser() user: CurrentUserData,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query() query: PaginationQueryDto,
   ) {
-    return this.ordersService.getMyOrders(
-      user.id,
-      page ? parseInt(page, 10) : 1,
-      limit ? parseInt(limit, 10) : 10,
-    );
+    return this.ordersService.getMyOrders(user.id, query.page, query.limit);
   }
 
   @ApiOperation({

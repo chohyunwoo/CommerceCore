@@ -18,17 +18,16 @@ import {
   ApiBody,
   ApiConsumes,
   ApiOperation,
-  ApiQuery,
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { OrderStatus } from '../orders/entities/order-status.enum';
 import { map, Observable } from 'rxjs';
 import { AdminService } from './admin.service';
 import { DomainEventsService } from '../common/events/domain-events.service';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { CreateDeliveryEventDto } from './dto/create-delivery-event.dto';
 import { CreateProductDto } from './dto/create-product.dto';
+import { RecentOrdersQueryDto } from './dto/recent-orders-query.dto';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { AdminSseGuard } from '../common/guards/admin-sse.guard';
 import { SupabaseStorageService } from './supabase-storage.service';
@@ -96,27 +95,14 @@ export class AdminController {
   @ApiOperation({
     summary: '주문 목록 (상태 필터 + 페이지네이션 + 구매자 검색)',
   })
-  @ApiQuery({ name: 'status', required: false, enum: OrderStatus })
-  @ApiQuery({ name: 'page', required: false })
-  @ApiQuery({ name: 'limit', required: false })
-  @ApiQuery({
-    name: 'search',
-    required: false,
-    description: '구매자 이름 또는 이메일 일부 검색',
-  })
   @UseGuards(AdminGuard)
   @Get('orders/recent')
-  getRecentOrders(
-    @Query('status') status?: OrderStatus,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-    @Query('search') search?: string,
-  ) {
+  getRecentOrders(@Query() query: RecentOrdersQueryDto) {
     return this.adminService.getRecentOrders(
-      status,
-      page ? parseInt(page, 10) : 1,
-      limit ? parseInt(limit, 10) : 20,
-      search,
+      query.status,
+      query.page,
+      query.limit,
+      query.search,
     );
   }
 
