@@ -1,17 +1,18 @@
 import { AppDataSource } from '../src/data-source';
 import { Product } from '../src/products/entities/product.entity';
 
-const CLIP_MODEL = 'Xenova/clip-vit-base-patch16';
+// 프론트엔드(frontend/src/lib/imageEmbedding.ts)와 반드시 같은 모델·같은 추출(CLS 토큰)을
+// 써야 쿼리·카탈로그 임베딩이 같은 벡터 공간에 있어 코사인 유사도가 의미를 가진다.
+// CLIP → DINOv2 전환(결정 32 개정).
+const DINOV2_MODEL = 'Xenova/dinov2-small';
 
 /**
  * 결정 32: 카탈로그 이미지 임베딩은 프로덕션 요청 경로가 아니라
  * 이 오프라인 스크립트로 미리 계산해 DB에 저장한다.
- * 프론트엔드(브라우저)도 동일 모델(CLIP_MODEL)을 사용해야
- * 두 임베딩이 같은 벡터 공간에 있어 코사인 유사도가 의미를 가진다.
+ * (모델을 바꾸면 기존 임베딩과 벡터 공간이 달라지므로 전 상품을 재계산해야 한다.)
  */
 async function main() {
-  const { AutoProcessor, CLIPVisionModelWithProjection, RawImage } =
-    await import('@huggingface/transformers');
+  const { pipeline } = await import('@huggingface/transformers');
 
   await AppDataSource.initialize();
   const productRepository = AppDataSource.getRepository(Product);
@@ -25,25 +26,44 @@ async function main() {
     return;
   }
 
-  console.log(`${CLIP_MODEL} 로딩 중...`);
-  const processor = await AutoProcessor.from_pretrained(CLIP_MODEL);
-  const visionModel =
-    await CLIPVisionModelWithProjection.from_pretrained(CLIP_MODEL);
+  console.log(`${DINOV2_MODEL} 로딩 중...`);
+  const extractor = await pipeline('image-feature-extraction', DINOV2_MODEL, {
+    dtype: 'q8',
+  });
 
+  let done = 0;
+  let failed = 0;
   for (const product of targets) {
     console.log(`[${product.id}] ${product.name} 임베딩 계산 중...`);
-    const image = await RawImage.read(product.imageUrl!);
-    const inputs = await processor(image);
-    const { image_embeds } = await visionModel(inputs);
-    const embedding = Array.from(image_embeds.tolist()[0] as number[]);
+    try {
+      const feat = (await extractor(product.imageUrl!)) as unknown as {
+        dims: number[];
+        tolist: () => number[][] | number[][][];
+      };
+      const data = feat.tolist();
+      // DINOv2 출력([1, seq, hidden])에서 CLS 토큰(index 0)을 전역 descriptor로 사용.
+      const embedding =
+        feat.dims.length === 3
+          ? (data as number[][][])[0][0]
+          : (data as number[][])[0];
 
-    product.imageEmbedding = embedding;
-    await productRepository.save(product);
-    console.log(`[${product.id}] ${product.name} 완료 (dim=${embedding.length})`);
+      product.imageEmbedding = embedding;
+      await productRepository.save(product);
+      done += 1;
+      console.log(
+        `[${product.id}] ${product.name} 완료 (dim=${embedding.length})`,
+      );
+    } catch (err) {
+      // 이미지 URL이 깨진 상품(예: 지난 테스트 데이터) 하나 때문에 전체가 멈추지 않도록
+      // 건너뛰고 계속한다.
+      failed += 1;
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[${product.id}] ${product.name} 건너뜀 — ${message}`);
+    }
   }
 
   await AppDataSource.destroy();
-  console.log('모든 상품 임베딩 계산 완료.');
+  console.log(`임베딩 계산 완료: 성공 ${done}건, 건너뜀 ${failed}건.`);
 }
 
 main().catch((err: unknown) => {
