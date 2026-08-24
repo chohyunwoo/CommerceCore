@@ -4,6 +4,8 @@ import type {
   AdminStats,
   CategoryItem,
   CreateProductPayload,
+  PaginatedBuyers,
+  PaginatedMembers,
   PaginatedRecentOrders,
   Product,
   RecentOrderItem,
@@ -22,6 +24,32 @@ export function fetchStockOverview(): Promise<StockOverviewItem[]> {
 
 export function fetchStats(): Promise<AdminStats> {
   return apiGet<AdminStats>('/admin/stats', adminHeaders());
+}
+
+export function fetchMembers(
+  page = 1,
+  limit = 20,
+  search?: string,
+): Promise<PaginatedMembers> {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (search) params.set('search', search);
+  return apiGet<PaginatedMembers>(
+    `/admin/members?${params.toString()}`,
+    adminHeaders(),
+  );
+}
+
+export function fetchBuyers(
+  page = 1,
+  limit = 20,
+  search?: string,
+): Promise<PaginatedBuyers> {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (search) params.set('search', search);
+  return apiGet<PaginatedBuyers>(
+    `/admin/buyers?${params.toString()}`,
+    adminHeaders(),
+  );
 }
 
 export function fetchRecentOrders(

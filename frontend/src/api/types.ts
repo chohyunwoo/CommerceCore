@@ -218,3 +218,34 @@ export interface AdminStats {
   topProducts: { productName: string; revenue: number }[];
   orderStatusDistribution: { status: string; count: number }[];
 }
+
+export interface MemberItem {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  createdAt: string;
+  orderCount: number;
+}
+
+export interface PaginatedMembers {
+  items: MemberItem[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+export interface BuyerItem {
+  email: string;
+  name: string;
+  orderCount: number;
+  totalSpent: number;
+  lastOrderedAt: string;
+}
+
+export interface PaginatedBuyers {
+  items: BuyerItem[];
+  total: number;
+  page: number;
+  totalPages: number;
+}

@@ -17,7 +17,11 @@ import { DomainEventsService } from '../common/events/domain-events.service';
 import { PaymentsService } from '../payments/payments.service';
 import {
   AdminStats,
+  BuyerItem,
   CategoryItem,
+  MemberItem,
+  PaginatedBuyers,
+  PaginatedMembers,
   PaginatedRecentOrders,
   RecentOrderItem,
   StockOverviewItem,
@@ -37,6 +41,12 @@ const REVENUE_STATUSES: string[] = [
   OrderStatus.SHIPPED,
   OrderStatus.DELIVERED,
 ];
+
+// ILIKE 검색어에 들어간 LIKE 와일드카드(\ % _)를 리터럴로 이스케이프한다.
+// (파라미터 바인딩이라 SQL 인젝션은 아니지만, 사용자가 %/_를 넣으면 패턴 의미가 바뀜)
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (m) => `\\${m}`);
+}
 
 // SHIPPED → DELIVERED는 이 메서드로 직접 전이하지 않는다 — 배송 단계 타임라인의
 // 마지막 이벤트(DELIVERED)가 기록될 때 addDeliveryEvent()가 자동으로 전이시킨다.
@@ -285,6 +295,133 @@ export class AdminService {
         status: r.status,
         count: Number(r.count),
       })),
+    };
+  }
+
+  /**
+   * 가입 회원(users) 목록. 이름/이메일 부분 검색 + 페이지네이션. 회원별 주문 수(orderCount)를
+   * 상관 서브쿼리로 함께 반환한다(읽기 전용, 결정 42).
+   */
+  async getMembers(
+    page = 1,
+    limit = 20,
+    search?: string,
+  ): Promise<PaginatedMembers> {
+    const like = search?.trim() ? `%${escapeLike(search.trim())}%` : null;
+    const whereItems = like
+      ? `WHERE (u.name ILIKE $1 ESCAPE '\\' OR u.email ILIKE $1 ESCAPE '\\')`
+      : '';
+    const itemParams: (string | number)[] = like ? [like] : [];
+    const limitIdx = itemParams.length + 1;
+    const offsetIdx = itemParams.length + 2;
+    itemParams.push(limit, (page - 1) * limit);
+
+    const items = await this.dataSource.query<
+      {
+        id: string;
+        email: string;
+        name: string;
+        role: string;
+        createdAt: Date;
+        orderCount: string;
+      }[]
+    >(
+      `SELECT u.id, u.email, u.name, u.role::text AS role,
+              u.created_at AS "createdAt",
+              (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id) AS "orderCount"
+       FROM users u
+       ${whereItems}
+       ORDER BY u.created_at DESC
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      itemParams,
+    );
+
+    const countRows = await this.dataSource.query<{ count: string }[]>(
+      `SELECT COUNT(*) AS count FROM users u ${whereItems}`,
+      like ? [like] : [],
+    );
+    const total = Number(countRows[0]?.count ?? 0);
+
+    return {
+      items: items.map((r): MemberItem => ({
+        id: Number(r.id),
+        email: r.email,
+        name: r.name,
+        role: r.role,
+        createdAt: r.createdAt,
+        orderCount: Number(r.orderCount),
+      })),
+      total,
+      page,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
+  }
+
+  /**
+   * 구매자(게스트 포함) 목록. orders를 buyer_email로 묶어 주문 수·매출 상태 기준 총구매액·
+   * 최근 주문일을 집계한다(읽기 전용, 결정 42). 전 행 로드 없이 SQL GROUP BY로 계산.
+   */
+  async getBuyers(
+    page = 1,
+    limit = 20,
+    search?: string,
+  ): Promise<PaginatedBuyers> {
+    const like = search?.trim() ? `%${escapeLike(search.trim())}%` : null;
+
+    // 목록 쿼리는 $1=REVENUE_STATUSES 고정, 검색어가 있으면 $2로 온다.
+    const itemParams: (string | number | string[])[] = [REVENUE_STATUSES];
+    const whereItems = like
+      ? `WHERE (o.buyer_name ILIKE $2 ESCAPE '\\' OR o.buyer_email ILIKE $2 ESCAPE '\\')`
+      : '';
+    if (like) itemParams.push(like);
+    const limitIdx = itemParams.length + 1;
+    const offsetIdx = itemParams.length + 2;
+    itemParams.push(limit, (page - 1) * limit);
+
+    const items = await this.dataSource.query<
+      {
+        email: string;
+        name: string;
+        orderCount: string;
+        totalSpent: string;
+        lastOrderedAt: Date;
+      }[]
+    >(
+      `SELECT o.buyer_email AS email,
+              MAX(o.buyer_name) AS name,
+              COUNT(*) AS "orderCount",
+              COALESCE(SUM(o.total_amount) FILTER (WHERE o.status::text = ANY($1)), 0) AS "totalSpent",
+              MAX(o.created_at) AS "lastOrderedAt"
+       FROM orders o
+       ${whereItems}
+       GROUP BY o.buyer_email
+       ORDER BY MAX(o.created_at) DESC
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      itemParams,
+    );
+
+    // 총 개수 = 검색 조건에 맞는 서로 다른 buyer_email 수.
+    const countWhere = like
+      ? `WHERE (o.buyer_name ILIKE $1 ESCAPE '\\' OR o.buyer_email ILIKE $1 ESCAPE '\\')`
+      : '';
+    const countRows = await this.dataSource.query<{ count: string }[]>(
+      `SELECT COUNT(*) AS count
+       FROM (SELECT 1 FROM orders o ${countWhere} GROUP BY o.buyer_email) t`,
+      like ? [like] : [],
+    );
+    const total = Number(countRows[0]?.count ?? 0);
+
+    return {
+      items: items.map((r): BuyerItem => ({
+        email: r.email,
+        name: r.name,
+        orderCount: Number(r.orderCount),
+        totalSpent: Number(r.totalSpent),
+        lastOrderedAt: r.lastOrderedAt,
+      })),
+      total,
+      page,
+      totalPages: Math.ceil(total / limit) || 1,
     };
   }
 

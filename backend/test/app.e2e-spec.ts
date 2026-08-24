@@ -12,7 +12,12 @@ import {
   PaginatedMyOrders,
   ValidateStockResponse,
 } from '../src/orders/orders.types';
-import { AdminStats, RecentOrderItem } from '../src/admin/admin.types';
+import {
+  AdminStats,
+  PaginatedBuyers,
+  PaginatedMembers,
+  RecentOrderItem,
+} from '../src/admin/admin.types';
 import { AuthResponse, CurrentUser } from '../src/auth/auth.types';
 import { CartResponse } from '../src/cart/cart.types';
 
@@ -321,6 +326,16 @@ describe('관리자 API 접근 제어 (e2e)', () => {
       .set('X-Session-Token', token)
       .expect(401);
 
+    // 회원·구매자 조회도 admin 전용이라 거부된다(이슈 #86).
+    await request(server)
+      .get('/admin/members')
+      .set('X-Session-Token', token)
+      .expect(401);
+    await request(server)
+      .get('/admin/buyers')
+      .set('X-Session-Token', token)
+      .expect(401);
+
     // SSE 티켓 발급도 마찬가지로 거부된다.
     await request(server)
       .post('/admin/events/ticket')
@@ -363,6 +378,104 @@ describe('관리자 API 접근 제어 (e2e)', () => {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  });
+});
+
+/**
+ * 관리자 회원·구매자 읽기 전용 조회를 실제 AppModule(진짜 DB/Redis)로 검증한다 — 이슈 #86.
+ * 회원(users)과 구매자(게스트 포함 orders 집계) 목록·검색이 동작하는지 확인한다.
+ */
+describe('관리자 회원·구매자 조회 (e2e)', () => {
+  let app: INestApplication<App>;
+  let dataSource: DataSource;
+  let adminToken: string;
+  const adminEmail = 'e2e-mb-admin@example.com';
+  const memberEmail = 'e2e-mb-member@example.com';
+  const buyerEmail = 'e2e-mb-buyer@example.com';
+  const orderNumber = 'ORD-E2E-MB-0001';
+
+  beforeEach(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.init();
+    dataSource = app.get(DataSource);
+    const server = app.getHttpServer();
+
+    await request(server)
+      .post('/auth/register')
+      .send({ email: adminEmail, password: 'password1234', name: '엠비관리자' })
+      .expect(201);
+    await dataSource.query(`UPDATE users SET role = 'admin' WHERE email = $1`, [
+      adminEmail,
+    ]);
+    const loginRes = await request(server)
+      .post('/auth/login')
+      .send({ email: adminEmail, password: 'password1234' })
+      .expect(201);
+    adminToken = (loginRes.body as AuthResponse).token;
+
+    // 일반 회원 1명
+    await request(server)
+      .post('/auth/register')
+      .send({ email: memberEmail, password: 'password1234', name: '엠비회원' })
+      .expect(201);
+
+    // 게스트 구매자 주문 1건(PAID → 매출로 집계). order_items 없이 orders 행만 있으면
+    // 구매자 집계에는 충분하다.
+    await dataSource.query(
+      `INSERT INTO orders (order_number, status, buyer_email, buyer_name, buyer_phone, buyer_address, total_amount)
+       VALUES ($1, 'PAID', $2, $3, '010-0000-0000', '서울시 어딘가', 5000)`,
+      [orderNumber, buyerEmail, '엠비구매자'],
+    );
+  });
+
+  afterEach(async () => {
+    await dataSource.query(`DELETE FROM orders WHERE order_number = $1`, [
+      orderNumber,
+    ]);
+    await dataSource.query(`DELETE FROM users WHERE email = ANY($1)`, [
+      [adminEmail, memberEmail],
+    ]);
+    await app.close();
+  });
+
+  it('회원 목록에 가입자가 나타나고 이메일로 검색된다', async () => {
+    const server = app.getHttpServer();
+
+    const listRes = await request(server)
+      .get('/admin/members?page=1&limit=50')
+      .set('X-Session-Token', adminToken)
+      .expect(200);
+    const list = listRes.body as PaginatedMembers;
+    const emails = list.items.map((m) => m.email);
+    expect(emails).toContain(adminEmail);
+    expect(emails).toContain(memberEmail);
+
+    const searchRes = await request(server)
+      .get(`/admin/members?search=${encodeURIComponent(memberEmail)}`)
+      .set('X-Session-Token', adminToken)
+      .expect(200);
+    const searched = searchRes.body as PaginatedMembers;
+    expect(searched.items.every((m) => m.email === memberEmail)).toBe(true);
+    expect(searched.items).toHaveLength(1);
+  });
+
+  it('구매자 목록에 게스트 구매자가 집계되고 검색된다', async () => {
+    const server = app.getHttpServer();
+
+    const searchRes = await request(server)
+      .get(`/admin/buyers?search=${encodeURIComponent(buyerEmail)}`)
+      .set('X-Session-Token', adminToken)
+      .expect(200);
+    const buyers = searchRes.body as PaginatedBuyers;
+    const buyer = buyers.items.find((b) => b.email === buyerEmail);
+    expect(buyer).toBeDefined();
+    expect(buyer!.orderCount).toBeGreaterThanOrEqual(1);
+    // PAID 주문 5000원이 매출 상태 총구매액으로 잡힌다.
+    expect(buyer!.totalSpent).toBeGreaterThanOrEqual(5000);
   });
 });
 

@@ -6,6 +6,7 @@ import type { StockOverviewItem } from '../api/types';
 import { AdminDashboardPage } from './AdminDashboardPage';
 import { AdminOrdersPage } from './AdminOrdersPage';
 import { AdminInventoryPage } from './AdminInventoryPage';
+import { AdminMembersPage } from './AdminMembersPage';
 import { AdminProductForm } from './AdminProductForm';
 import { LOW_STOCK_THRESHOLD } from './adminConstants';
 import { useAuth } from '../context/AuthContext';
@@ -221,12 +222,7 @@ function AdminShell({ onAuthError }: ShellProps) {
         )}
         {section === 'inventory' && <AdminInventoryPage stock={stock} />}
         {section === 'members' && (
-          <div className="admin-placeholder">
-            <p className="admin-section-title">회원·구매자</p>
-            <p className="admin-placeholder-text">
-              회원·구매자 관리는 준비 중입니다.
-            </p>
-          </div>
+          <AdminMembersPage onAuthError={onAuthError} />
         )}
         {section === 'products' && <AdminProductForm onAuthError={onAuthError} />}
       </div>
