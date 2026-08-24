@@ -1317,6 +1317,21 @@
   text-align: center;
 }
 
+.role-badge {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #eeeeee;
+  color: var(--text-sub);
+}
+
+.role-badge.role-admin {
+  background: #e6f0fb;
+  color: #2a78d6;
+  font-weight: 600;
+}
+
 .admin-placeholder {
   padding: 8px 0;
 }
