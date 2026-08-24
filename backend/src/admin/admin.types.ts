@@ -71,3 +71,34 @@ export interface AdminStats {
   topProducts: TopProductItem[];
   orderStatusDistribution: OrderStatusCount[];
 }
+
+export interface MemberItem {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  createdAt: Date;
+  orderCount: number;
+}
+
+export interface PaginatedMembers {
+  items: MemberItem[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+export interface BuyerItem {
+  email: string;
+  name: string;
+  orderCount: number;
+  totalSpent: number;
+  lastOrderedAt: Date;
+}
+
+export interface PaginatedBuyers {
+  items: BuyerItem[];
+  total: number;
+  page: number;
+  totalPages: number;
+}

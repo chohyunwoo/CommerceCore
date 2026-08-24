@@ -28,6 +28,7 @@ import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { CreateDeliveryEventDto } from './dto/create-delivery-event.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { RecentOrdersQueryDto } from './dto/recent-orders-query.dto';
+import { MemberSearchQueryDto } from './dto/member-search-query.dto';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { AdminSseGuard } from '../common/guards/admin-sse.guard';
 import { SupabaseStorageService } from './supabase-storage.service';
@@ -100,6 +101,25 @@ export class AdminController {
   @Get('stats')
   getStats() {
     return this.adminService.getStats();
+  }
+
+  @ApiOperation({
+    summary: '가입 회원 목록 (이름/이메일 검색 + 페이지네이션, 읽기 전용)',
+  })
+  @UseGuards(AdminGuard)
+  @Get('members')
+  getMembers(@Query() query: MemberSearchQueryDto) {
+    return this.adminService.getMembers(query.page, query.limit, query.search);
+  }
+
+  @ApiOperation({
+    summary:
+      '구매자 목록 (게스트 포함, buyer_email 기준 집계. 이름/이메일 검색 + 페이지네이션, 읽기 전용)',
+  })
+  @UseGuards(AdminGuard)
+  @Get('buyers')
+  getBuyers(@Query() query: MemberSearchQueryDto) {
+    return this.adminService.getBuyers(query.page, query.limit, query.search);
   }
 
   @ApiOperation({
