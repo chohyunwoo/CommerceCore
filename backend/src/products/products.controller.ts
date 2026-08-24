@@ -22,14 +22,20 @@ import { ProductListQueryDto } from './dto/product-list-query.dto';
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
-  @ApiOperation({ summary: '카테고리별 상품 목록 조회 (페이지네이션)' })
+  @ApiOperation({
+    summary: '상품 목록 조회 (카테고리·상품명 검색·가격 범위·정렬·페이지네이션)',
+  })
   @Get()
   findAll(@Query() query: ProductListQueryDto) {
-    return this.productsService.findAll(
-      query.category,
-      query.page,
-      query.limit,
-    );
+    return this.productsService.findAll({
+      category: query.category,
+      page: query.page,
+      limit: query.limit,
+      search: query.search,
+      minPrice: query.minPrice,
+      maxPrice: query.maxPrice,
+      sort: query.sort,
+    });
   }
 
   @ApiOperation({ summary: '상품 상세 + 옵션별 재고 조회' })
