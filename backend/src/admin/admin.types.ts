@@ -31,3 +31,43 @@ export interface CategoryItem {
   id: number;
   name: string;
 }
+
+export interface StatsSummary {
+  totalRevenue: number;
+  totalUnits: number;
+  totalOrders: number;
+}
+
+export interface DailyRevenuePoint {
+  date: string; // YYYY-MM-DD
+  revenue: number;
+}
+
+export interface MonthlyRevenuePoint {
+  month: string; // YYYY-MM
+  revenue: number;
+}
+
+export interface CategoryRevenueItem {
+  categoryName: string;
+  revenue: number;
+}
+
+export interface TopProductItem {
+  productName: string;
+  revenue: number;
+}
+
+export interface OrderStatusCount {
+  status: string;
+  count: number;
+}
+
+export interface AdminStats {
+  summary: StatsSummary;
+  revenueDaily: DailyRevenuePoint[];
+  revenueMonthly: MonthlyRevenuePoint[];
+  categoryRevenue: CategoryRevenueItem[];
+  topProducts: TopProductItem[];
+  orderStatusDistribution: OrderStatusCount[];
+}
