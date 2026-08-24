@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { ApiError } from '../api/client';
+import { updateOptionStock } from '../api/admin';
 import type { StockOverviewItem } from '../api/types';
 import { LOW_STOCK_THRESHOLD } from './adminConstants';
 
@@ -17,12 +19,50 @@ interface Props {
   stock: StockOverviewItem[];
   // 배너에서 넘어올 때 적용할 상태 필터 요청. nonce가 바뀔 때마다 value로 재설정한다.
   statusFilterRequest?: { value: StockStatusFilter; nonce: number };
+  onAuthError: () => void;
 }
 
-export function AdminInventoryPage({ stock, statusFilterRequest }: Props) {
+export function AdminInventoryPage({
+  stock,
+  statusFilterRequest,
+  onAuthError,
+}: Props) {
   const [stockCategoryFilter, setStockCategoryFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<StockStatusFilter>('all');
   const [page, setPage] = useState(1);
+  // 재입고 입력값(productOptionId -> 값)과 저장 중인 옵션 id
+  const [stockDraft, setStockDraft] = useState<Record<number, string>>({});
+  const [busy, setBusy] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // 재입고 — 저장 후 서버가 SSE stock-update를 발행해 shell의 stock이 갱신되고
+  // 화면에 반영된다(재고 값의 단일 출처는 shell). 입력값만 비워준다.
+  function handleRestock(item: StockOverviewItem) {
+    const raw = stockDraft[item.productOptionId];
+    const value = Number(raw);
+    if (raw === undefined || raw === '' || !Number.isInteger(value) || value < 0) {
+      setError('재고는 0 이상의 정수여야 합니다.');
+      return;
+    }
+    setError(null);
+    setBusy(item.productOptionId);
+    updateOptionStock(item.productId, item.productOptionId, value)
+      .then(() => {
+        setStockDraft((prev) => {
+          const next = { ...prev };
+          delete next[item.productOptionId];
+          return next;
+        });
+      })
+      .catch((err: unknown) => {
+        if (err instanceof ApiError && err.statusCode === 401) {
+          onAuthError();
+          return;
+        }
+        setError(err instanceof ApiError ? err.message : '재입고에 실패했습니다.');
+      })
+      .finally(() => setBusy(null));
+  }
 
   // 카테고리/상태 필터가 바뀌면 항상 첫 페이지부터 다시 본다.
   useEffect(() => {
@@ -75,6 +115,7 @@ export function AdminInventoryPage({ stock, statusFilterRequest }: Props) {
   return (
     <>
       <p className="admin-section-title">재고 현황</p>
+      {error && <p className="admin-login-error">{error}</p>}
       <div className="category-filter">
         {STATUS_TABS.map((tab) => (
           <button
@@ -121,6 +162,7 @@ export function AdminInventoryPage({ stock, statusFilterRequest }: Props) {
                 <th>사이즈</th>
                 <th>색상</th>
                 <th>재고</th>
+                <th>재입고</th>
               </tr>
             </thead>
             <tbody>
@@ -141,6 +183,31 @@ export function AdminInventoryPage({ stock, statusFilterRequest }: Props) {
                       }
                     >
                       {item.stock > 0 ? item.stock : '품절'}
+                    </td>
+                    <td>
+                      <div className="order-actions">
+                        <input
+                          className="shipping-form-input"
+                          type="number"
+                          min={0}
+                          placeholder={String(item.stock)}
+                          value={stockDraft[item.productOptionId] ?? ''}
+                          onChange={(e) =>
+                            setStockDraft((prev) => ({
+                              ...prev,
+                              [item.productOptionId]: e.target.value,
+                            }))
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="order-action-btn primary"
+                          disabled={busy === item.productOptionId}
+                          onClick={() => handleRestock(item)}
+                        >
+                          {busy === item.productOptionId ? '...' : '저장'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
