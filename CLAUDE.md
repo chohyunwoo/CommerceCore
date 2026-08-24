@@ -388,6 +388,7 @@ CREATE TABLE order_items (
 - CI(`ci.yml`)의 "Load schema" 단계를 `npm run migration:run`으로 교체해 마이그레이션 자체가 매 PR마다 검증되도록 함. `commerce-core-schema.sql`은 삭제하지 않고 ERD 시각화용 참고 스냅샷으로 유지, 상단에 "이제 `src/migrations/`가 기준"이라는 안내 추가.
 - **`migrationsRun: true`(앱 부팅 시 자동 실행)는 이번엔 켜지지 않음** — 결정 26/27의 배포 크래시를 겪은 직후라, 자동 실행까지 한 번에 붙이는 건 리스크를 늘린다고 판단. 당분간 `npm run migration:run` 수동 실행으로 검증 기간을 둠.
 - **재검토 트리거**: 마이그레이션 워크플로우가 몇 번의 실제 스키마 변경을 거쳐 안정성이 검증되면 → `migrationsRun: true`로 전환해 배포 시 자동 적용 검토.
+- **2026-08-24 전환(이슈 #98)**: 위 트리거 해소. 수동 적용을 잊어 프로덕션 `/admin/*` 500(`products.is_active` 없음) 사고가 나, `app.module.ts`에 `migrations`(글롭 `__dirname + '/migrations/*{.ts,.js}'` — dist/js·src/ts 모두 커버) + `migrationsRun: true`를 추가해 **앱 부팅 시 자동 적용**으로 전환. 전 마이그레이션이 멱등적이라 적용된 환경은 no-op, 실패 시 부팅 크래시라 CI `migration:run`이 사전 검증(이중 안전). CI의 명시적 migration 스텝은 유지.
 
 ### 30. Rate limiting(@nestjs/throttler) + 상품 조회 응답 캐싱
 
@@ -628,8 +629,8 @@ CREATE TABLE order_items (
 34. ~~관리자 대시보드 개편 3단계 — 회원·구매자 읽기 전용 목록/검색(GET /admin/members·/admin/buyers, 결정 42)~~ ✅ — 2026-08-24, 이슈 #86 → **대시보드 개편(결정 42) 3단계 전부 완료**
    - (개편 중 나온 UX 후속: 재고 페이지네이션+화면 폭 — 이슈 #82/#83 완료)
 35. ~~상품 관리 확장 — 재고 상태 필터 + 소프트 삭제/재입고/옵션 추가 (결정 43)~~ ✅ — 2026-08-24, 이슈 #88
-36. ~~이미지 검색 모델 CLIP → DINOv2(dinov2-small) 전환 — 스파이크로 분리도 4배·용량 24/84MB 검증 후 전환, 임계값 0.5→0.15 재보정, 카탈로그 임베딩 재계산 (결정 32 개정)~~ ✅ — 2026-08-24, 이슈 #96
-37. 후속(사용자) — 프로덕션 DB에 DINOv2 임베딩 재계산(`embeddings:compute`) 필요(모델 변경으로 512차원 CLIP 임베딩과 섞이면 검색 어긋남)
 36. ~~메인 상품 목록 검색(상품명)·가격 범위 필터·정렬(최신/가격/이름) 추가 — 서버사이드(GET /products 확장, findAll을 QueryBuilder로 전환, 정렬 화이트리스트·LIKE 이스케이프)~~ ✅ — 2026-08-24, 이슈 #94
-37. 후속(사용자 설정 필요) — 프로덕션 Supabase에 마이그레이션 적용(`AddProductIsActive`·`AddProductOptionIsActiveAndPartialUniqueSku`) — 미적용 시 `/admin/stock-overview` 등 500. `migrationsRun:true` 전환도 검토(결정 29 재검토 트리거).
-38. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
+37. ~~이미지 검색 모델 CLIP → DINOv2(dinov2-small) 전환 — 스파이크로 분리도 4배·용량 24/84MB 검증 후 전환, 임계값 0.5→0.15 재보정, 카탈로그 임베딩 재계산 (결정 32 개정)~~ ✅ — 2026-08-24, 이슈 #96
+38. ~~배포 시 마이그레이션 자동 적용(migrationsRun: true) 전환 (결정 29 트리거 해소)~~ ✅ — 2026-08-24, 이슈 #98
+39. 후속(사용자, 1회) — 프로덕션 DB에 DINOv2 임베딩 재계산(`embeddings:compute`) 필요(모델 변경으로 512차원 CLIP 임베딩과 섞이면 이미지 검색 어긋남). ※ 프로덕션 스키마 마이그레이션은 #98로 배포 시 자동 적용됨.
+40. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
