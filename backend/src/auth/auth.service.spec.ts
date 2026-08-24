@@ -4,8 +4,14 @@ import { AuthService } from './auth.service';
 // compare만 실제 구현을 감싼 jest.fn으로 대체 — 동작(해시 비교)은 그대로 두고 호출만 관찰한다.
 // (bcryptjs의 export는 non-configurable이라 jest.spyOn이 불가능해 모듈 목으로 처리)
 jest.mock('bcryptjs', () => {
-  const actual = jest.requireActual('bcryptjs');
-  return { ...actual, compare: jest.fn(actual.compare) };
+  const actual = jest.requireActual<typeof import('bcryptjs')>('bcryptjs');
+  return {
+    ...actual,
+    // 2-인자 화살표로 감싸 Promise 오버로드를 명확히 선택(콜백 오버로드 회피).
+    compare: jest.fn((data: string, encrypted: string) =>
+      actual.compare(data, encrypted),
+    ),
+  };
 });
 import { User } from './entities/user.entity';
 import { AppException } from '../common/errors/app-exception';
