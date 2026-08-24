@@ -529,6 +529,16 @@ CREATE TABLE order_items (
 - **테스트**: `AdminGuard`/`AdminSseGuard`에 배열 헤더·쿼리 거부 케이스, `SupabaseStorageService`에 확장자가 파일명이 아닌 MIME 타입에서 결정되는지 검증하는 유닛테스트 추가.
 - **재검토 트리거**: 없음.
 
+### 41. 보안 점검 후속 조치 2차 — 로그 PII 마스킹, 로그인 타이밍 균일화, 목록 조회 페이지네이션 상한
+
+- **배경**: 결정 40 이후 `main` 브랜치 backend 전체를 보안 관점으로 재점검(도메인별 병렬 리뷰 → 중요 이상은 실제 코드에서 직접 재검증). 치명적 이슈는 없었고, DB TLS 인증서 검증(`rejectUnauthorized: false`)은 Supabase CA/Render env 설정이 필요해 별도로 분리, 순수 코드 수정으로 끝나는 3건만 이슈 #78로 묶어 처리.
+- **1. 로그 PII/티켓 평문 기록**: `LoggingInterceptor`가 `originalUrl`을 쿼리스트링째 기록해 `GET /orders/lookup?email=`의 구매자 이메일(PII)과 `GET /admin/events?ticket=`의 SSE 단기 티켓이 로그에 평문으로 남았음. 경로만 기록(`originalUrl.split('?')[0]`)하도록 변경 — "URL에 크리덴셜을 싣지 않으려던" 티켓 설계(결정 38) 취지를 로그 단에서도 관철. (전체 쿼리 제거 방식을 택한 이유: 파라미터별 마스킹은 새 민감 파라미터가 추가될 때 누락 위험이 있어, 경로만 남기는 편이 더 견고)
+- **2. 로그인 타이밍 계정 열거**: `AuthService.login()`이 미존재 이메일을 `bcrypt.compare` 없이 즉시 반환해, 존재(느린 bcrypt)/미존재(즉시) 간 응답시간 차이로 가입 여부가 열거되는 타이밍 사이드채널(OWASP A07). 미존재 시에도 고정 더미 해시(`DUMMY_PASSWORD_HASH`)에 `compare`를 1회 수행해 경로별 소요시간을 균일화. (단, 회원가입의 `EMAIL_ALREADY_EXISTS`가 존재를 직접 노출하는 벡터는 남아 있음 — rate limit(결정 40)과 함께 봐야 실효가 있는 defense-in-depth 성격)
+- **3. 목록 조회 페이지네이션 상한 부재**: `/products`(무인증)·`/orders/my`·`/admin/orders/recent`의 `page`/`limit`이 `parseInt`만 거쳐 상한·NaN 검증이 없어 `?limit=1000000`(대량 로드)·`?limit=abc`(`NaN`이 `take`/`skip`으로 전파)로 자원 고갈을 유발할 수 있었음(A05, Render 0.1 vCPU 환경·결정 31). 공용 `PaginationQueryDto`(`@Type(()=>Number)`+`@IsInt()`+`@Min(1)`+`@Max(100)`)를 도입하고 세 엔드포인트에 적용. **page/limit을 선택으로 두어** 생략 시 각 서비스의 기존 기본값(products 12, my 10, admin 20)이 그대로 적용됨 — 프론트 호출값(12/10/20)은 상한 안쪽이라 동작 변화 없음. `/admin/orders/recent`의 `status`도 이 참에 `@IsEnum`으로 검증 추가.
+- **테스트**: `PaginationQueryDto`(상한/정수/NaN/경계값) + `auth.service.spec`(미존재 계정도 `bcrypt.compare` 호출 검증) 유닛테스트 추가. 기존 유닛 102개·e2e 9개 전부 통과 확인.
+- **분리 처리(후속)**: DB TLS 인증서 검증 활성화(`rejectUnauthorized: true` + Supabase CA를 `DB_CA_CERT` env로 주입) — Pooler 인증서 호환성 검증이 필요해 사용자 설정 작업과 함께 별도 진행.
+- **재검토 트리거**: 없음(TLS 건은 후속 작업으로 이관).
+
 ### 테스트 데이터
 
 - `categories`: 신발, 상의, 하의
@@ -583,4 +593,6 @@ CREATE TABLE order_items (
 27. ~~게스트 장바구니 → 로그인 사용자 장바구니 병합 (하이브리드 Redis+DB, 결정 36)~~ ✅ — 2026-08-20, 이슈 #65
 28. ~~주문-계정 연결 + 마이페이지 (내 주문 목록/상세, 결정 37)~~ ✅ — 2026-08-20, 이슈 #67
 29. ~~관리자 인증을 정적 토큰에서 로그인 세션 + role 기반으로 전환 + SSE 단기 티켓 + 재고현황 토글/구매자 검색 (결정 38)~~ ✅ — 2026-08-20, 이슈 #69
-30. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
+30. ~~보안 점검 후속 조치 2차 — 로그 PII 마스킹/로그인 타이밍 균일화/목록 페이지네이션 상한 (결정 41)~~ ✅ — 2026-08-24, 이슈 #78
+31. 후속(사용자 설정 필요) — DB TLS 인증서 검증 활성화(`rejectUnauthorized: true` + Supabase CA를 `DB_CA_CERT`로 주입, Pooler 호환성 배포 검증)
+32. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
