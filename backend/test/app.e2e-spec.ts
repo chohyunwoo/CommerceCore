@@ -46,6 +46,83 @@ describe('AppController (e2e)', () => {
   });
 });
 
+/**
+ * 상품 목록 검색/가격 필터/정렬을 실제 AppModule(진짜 DB)로 검증한다 — 이슈 #94.
+ * 공유 DB의 기존 상품과 섞이지 않도록 전용 카테고리로 범위를 좁혀 검증한다.
+ */
+describe('상품 목록 검색·필터·정렬 (e2e)', () => {
+  let app: INestApplication<App>;
+  let dataSource: DataSource;
+  let categoryId: number;
+  const categoryName = 'E2E검색카테고리';
+
+  beforeEach(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    app = moduleFixture.createNestApplication();
+    await app.init();
+    dataSource = app.get(DataSource);
+
+    const [category] = await dataSource.query<{ id: string }[]>(
+      `INSERT INTO categories (name) VALUES ($1) RETURNING id`,
+      [categoryName],
+    );
+    categoryId = Number(category.id);
+    await dataSource.query(
+      `INSERT INTO products (category_id, name, base_price) VALUES
+         ($1, 'E2E검색테스트-alpha', 5000),
+         ($1, 'E2E검색테스트-beta', 15000),
+         ($1, '다른이름감마', 25000)`,
+      [categoryId],
+    );
+  });
+
+  afterEach(async () => {
+    await dataSource.query(`DELETE FROM products WHERE category_id = $1`, [
+      categoryId,
+    ]);
+    await dataSource.query(`DELETE FROM categories WHERE id = $1`, [
+      categoryId,
+    ]);
+    await app.close();
+  });
+
+  it('상품명 검색·가격 범위·정렬이 적용된다', async () => {
+    const server = app.getHttpServer();
+    const base = `/products?category=${encodeURIComponent(categoryName)}`;
+    type ListRes = {
+      items: { name: string; basePrice: number }[];
+      total: number;
+    };
+
+    // 검색: 'E2E검색테스트'는 alpha/beta만 매칭('다른이름감마' 제외)
+    const searchRes = await request(server)
+      .get(`${base}&search=${encodeURIComponent('E2E검색테스트')}`)
+      .expect(200);
+    const search = searchRes.body as ListRes;
+    expect(search.total).toBe(2);
+    expect(search.items.every((p) => p.name.includes('E2E검색테스트'))).toBe(
+      true,
+    );
+
+    // 가격 범위: 10000~20000 → beta(15000)만
+    const priceRes = await request(server)
+      .get(`${base}&minPrice=10000&maxPrice=20000`)
+      .expect(200);
+    const price = priceRes.body as ListRes;
+    expect(price.total).toBe(1);
+    expect(price.items[0].basePrice).toBe(15000);
+
+    // 정렬: 가격 오름차순 → 5000, 15000, 25000
+    const sortRes = await request(server)
+      .get(`${base}&sort=price_asc`)
+      .expect(200);
+    const sorted = sortRes.body as ListRes;
+    expect(sorted.items.map((p) => p.basePrice)).toEqual([5000, 15000, 25000]);
+  });
+});
+
 function jsonResponse(status: number, body: unknown) {
   return { ok: status < 300, status, json: () => Promise.resolve(body) };
 }
