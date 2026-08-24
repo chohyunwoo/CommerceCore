@@ -84,9 +84,10 @@ export class AdminController {
   })
   @UseGuards(AdminGuard)
   @Delete('products/:id')
-  @HttpCode(204)
   async softDeleteProduct(@Param('id', ParseIntPipe) id: number) {
     await this.adminService.softDeleteProduct(id);
+    // apiDelete가 성공 응답의 JSON을 파싱하므로 빈 204 대신 바디를 돌려준다.
+    return { id, deleted: true };
   }
 
   @ApiOperation({ summary: '기존 상품에 옵션 추가 (SKU 중복 거부)' })

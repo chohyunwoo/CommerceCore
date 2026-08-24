@@ -6,8 +6,9 @@ import type { StockOverviewItem } from '../api/types';
 import { AdminDashboardPage } from './AdminDashboardPage';
 import { AdminOrdersPage } from './AdminOrdersPage';
 import { AdminInventoryPage } from './AdminInventoryPage';
+import type { StockStatusFilter } from './AdminInventoryPage';
 import { AdminMembersPage } from './AdminMembersPage';
-import { AdminProductForm } from './AdminProductForm';
+import { AdminProductsPage } from './AdminProductsPage';
 import { LOW_STOCK_THRESHOLD } from './adminConstants';
 import { useAuth } from '../context/AuthContext';
 
@@ -25,7 +26,7 @@ const NAV_ITEMS: { section: AdminSection; label: string }[] = [
   { section: 'orders', label: '주문 관리' },
   { section: 'inventory', label: '재고 관리' },
   { section: 'members', label: '회원·구매자' },
-  { section: 'products', label: '상품 등록' },
+  { section: 'products', label: '상품 관리' },
 ];
 
 export function AdminPage() {
@@ -83,6 +84,11 @@ function AdminShell({ onAuthError }: ShellProps) {
   const [connected, setConnected] = useState(false);
   // SSE order-update 수신 시마다 증가 — 주문 화면이 이 값을 구독해 재조회한다.
   const [orderUpdateNonce, setOrderUpdateNonce] = useState(0);
+  // 재고 부족 배너 클릭 시 재고 화면에 전달할 상태 필터 요청(nonce로 매번 재적용).
+  const [stockFilterReq, setStockFilterReq] = useState<{
+    value: StockStatusFilter;
+    nonce: number;
+  }>({ value: 'all', nonce: 0 });
 
   // 재고는 배너(전 화면 상단)와 재고 관리 화면이 공유하므로 shell에서 관리한다.
   useEffect(() => {
@@ -196,7 +202,11 @@ function AdminShell({ onAuthError }: ShellProps) {
           <button
             type="button"
             className="stock-alert-banner"
-            onClick={() => setSection('inventory')}
+            onClick={() => {
+              setSection('inventory');
+              // "확인이 필요한 재고"(품절 포함 임계값 이하)만 보이도록 필터 요청.
+              setStockFilterReq((r) => ({ value: 'low', nonce: r.nonce + 1 }));
+            }}
           >
             <span className="stock-alert-icon">!</span>
             <span>
@@ -220,11 +230,18 @@ function AdminShell({ onAuthError }: ShellProps) {
             onAuthError={onAuthError}
           />
         )}
-        {section === 'inventory' && <AdminInventoryPage stock={stock} />}
+        {section === 'inventory' && (
+          <AdminInventoryPage
+            stock={stock}
+            statusFilterRequest={stockFilterReq}
+          />
+        )}
         {section === 'members' && (
           <AdminMembersPage onAuthError={onAuthError} />
         )}
-        {section === 'products' && <AdminProductForm onAuthError={onAuthError} />}
+        {section === 'products' && (
+          <AdminProductsPage onAuthError={onAuthError} />
+        )}
       </div>
     </div>
   );
