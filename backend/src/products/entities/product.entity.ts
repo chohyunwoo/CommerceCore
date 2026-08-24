@@ -38,6 +38,10 @@ export class Product {
   @Column({ name: 'image_embedding', type: 'jsonb', nullable: true })
   imageEmbedding: number[] | null;
 
+  // 소프트 삭제 플래그(이슈 #88). false면 고객 목록·검색·재고 현황에서 숨김(주문 이력은 보존).
+  @Column({ name: 'is_active', type: 'boolean', default: true })
+  isActive: boolean;
+
   @OneToMany(() => ProductOption, (option) => option.product)
   options: ProductOption[];
 
