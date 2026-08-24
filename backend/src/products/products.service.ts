@@ -31,10 +31,10 @@ function escapeLike(value: string): string {
 }
 
 const SEARCH_BY_IMAGE_LIMIT = 5;
-// CLIP 이미지 임베딩끼리는 서로 무관한 사진도 코사인 유사도가 0.5~0.7대로 뭉치는 경향이 있어
-// (예: 신발과 조거 팬츠가 0.6대로 나오는 경우) 이 값 하나로 카테고리를 깔끔하게 갈라내진 못한다.
-// 다만 명백히 무관한 항목(0.5 미만)은 걸러내는 최소한의 안전장치로 둔다.
-const MIN_SIMILARITY = 0.5;
+// DINOv2 임베딩 기준 재보정(결정 32 개정). 스파이크 실측상 다른 카테고리 평균 유사도가
+// 0.086, 같은 카테고리 평균이 0.232로 분포가 CLIP보다 훨씬 넓게 갈린다. 명백히 무관한
+// 항목을 걸러내는 최소 안전장치로 0.15를 둔다(실사용 데이터로 재튜닝 여지).
+const MIN_SIMILARITY = 0.15;
 
 @Injectable()
 export class ProductsService {
