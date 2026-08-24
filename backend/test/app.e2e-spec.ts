@@ -12,7 +12,7 @@ import {
   PaginatedMyOrders,
   ValidateStockResponse,
 } from '../src/orders/orders.types';
-import { RecentOrderItem } from '../src/admin/admin.types';
+import { AdminStats, RecentOrderItem } from '../src/admin/admin.types';
 import { AuthResponse, CurrentUser } from '../src/auth/auth.types';
 import { CartResponse } from '../src/cart/cart.types';
 
@@ -234,6 +234,43 @@ describe('주문 → 배송완료 전체 라이프사이클 (e2e)', () => {
     expect(lookupBody.trackingNumber).toBe('1234567890');
     expect(lookupBody.carrier).toBe('CJ대한통운');
     expect(lookupBody.deliveryEvents).toHaveLength(4);
+
+    // 통계 대시보드(결정 42): 방금 결제·배송완료된 주문이 집계에 반영되는지 확인한다.
+    // 로컬/CI DB에 다른 데이터가 있을 수 있으므로 정확값이 아닌 하한(>=)으로 검증한다.
+    const statsRes = await request(server)
+      .get('/admin/stats')
+      .set('X-Session-Token', adminToken)
+      .expect(200);
+    const stats = statsRes.body as AdminStats;
+
+    // 매출/판매량/주문수에 이 주문(10,000원, 1개)이 포함되어 있다.
+    expect(stats.summary.totalRevenue).toBeGreaterThanOrEqual(10000);
+    expect(stats.summary.totalUnits).toBeGreaterThanOrEqual(1);
+    expect(stats.summary.totalOrders).toBeGreaterThanOrEqual(1);
+
+    // 시계열은 빈 구간까지 채워 30일/12개월 고정 길이로 내려온다.
+    expect(stats.revenueDaily).toHaveLength(30);
+    expect(stats.revenueMonthly).toHaveLength(12);
+
+    // 인기 상품·카테고리 집계에 이 주문의 상품/카테고리가 매출로 잡힌다.
+    const product = stats.topProducts.find(
+      (p) => p.productName === 'E2E테스트상품',
+    );
+    expect(product).toBeDefined();
+    expect(product!.revenue).toBeGreaterThanOrEqual(10000);
+
+    const category = stats.categoryRevenue.find(
+      (c) => c.categoryName === 'E2E테스트카테고리',
+    );
+    expect(category).toBeDefined();
+    expect(category!.revenue).toBeGreaterThanOrEqual(10000);
+
+    // 주문 상태 분포에 DELIVERED가 1건 이상 잡힌다.
+    const delivered = stats.orderStatusDistribution.find(
+      (s) => s.status === 'DELIVERED',
+    );
+    expect(delivered).toBeDefined();
+    expect(delivered!.count).toBeGreaterThanOrEqual(1);
   });
 });
 
