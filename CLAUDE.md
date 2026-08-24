@@ -627,4 +627,6 @@ CREATE TABLE order_items (
 34. ~~관리자 대시보드 개편 3단계 — 회원·구매자 읽기 전용 목록/검색(GET /admin/members·/admin/buyers, 결정 42)~~ ✅ — 2026-08-24, 이슈 #86 → **대시보드 개편(결정 42) 3단계 전부 완료**
    - (개편 중 나온 UX 후속: 재고 페이지네이션+화면 폭 — 이슈 #82/#83 완료)
 35. ~~상품 관리 확장 — 재고 상태 필터 + 소프트 삭제/재입고/옵션 추가 (결정 43)~~ ✅ — 2026-08-24, 이슈 #88
-36. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
+36. ~~메인 상품 목록 검색(상품명)·가격 범위 필터·정렬(최신/가격/이름) 추가 — 서버사이드(GET /products 확장, findAll을 QueryBuilder로 전환, 정렬 화이트리스트·LIKE 이스케이프)~~ ✅ — 2026-08-24, 이슈 #94
+37. 후속(사용자 설정 필요) — 프로덕션 Supabase에 마이그레이션 적용(`AddProductIsActive`·`AddProductOptionIsActiveAndPartialUniqueSku`) — 미적용 시 `/admin/stock-overview` 등 500. `migrationsRun:true` 전환도 검토(결정 29 재검토 트리거).
+38. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
