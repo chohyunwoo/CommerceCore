@@ -16,6 +16,7 @@ import { DELIVERY_STAGE_ORDER } from '../orders/entities/delivery-stage.enum';
 import { DomainEventsService } from '../common/events/domain-events.service';
 import { PaymentsService } from '../payments/payments.service';
 import {
+  AdminStats,
   CategoryItem,
   PaginatedRecentOrders,
   RecentOrderItem,
@@ -29,6 +30,13 @@ import { AppException } from '../common/errors/app-exception';
 const RECENT_ORDERS_LIMIT = 20;
 const CANCEL_REASON = '관리자에 의한 주문 취소';
 const ADMIN_SSE_TICKET_TTL_SECONDS = 30;
+
+// 매출로 집계하는 주문 상태 — 결제가 확정된 것만(대기/취소 제외). 결정 42.
+const REVENUE_STATUSES: string[] = [
+  OrderStatus.PAID,
+  OrderStatus.SHIPPED,
+  OrderStatus.DELIVERED,
+];
 
 // SHIPPED → DELIVERED는 이 메서드로 직접 전이하지 않는다 — 배송 단계 타임라인의
 // 마지막 이벤트(DELIVERED)가 기록될 때 addDeliveryEvent()가 자동으로 전이시킨다.
@@ -158,6 +166,126 @@ export class AdminService {
       color: option.color,
       stock: option.stock,
     }));
+  }
+
+  /**
+   * 대시보드 통계 집계(결정 42). 전 행을 앱으로 로드하지 않고 Postgres GROUP BY/집계로
+   * 계산한다(Render 0.1 vCPU, 결정 31). 매출은 REVENUE_STATUSES(PAID·SHIPPED·DELIVERED)만
+   * 포함하고, 주문 상태 분포는 전체 상태를 센다. 시계열은 generate_series로 빈 구간도 0으로 채운다.
+   */
+  async getStats(): Promise<AdminStats> {
+    const summaryRows = await this.dataSource.query<
+      { revenue: string; orders: string }[]
+    >(
+      `SELECT COALESCE(SUM(total_amount), 0) AS revenue, COUNT(*) AS orders
+       FROM orders WHERE status::text = ANY($1)`,
+      [REVENUE_STATUSES],
+    );
+
+    const unitsRows = await this.dataSource.query<{ units: string }[]>(
+      `SELECT COALESCE(SUM(oi.quantity), 0) AS units
+       FROM order_items oi JOIN orders o ON o.id = oi.order_id
+       WHERE o.status::text = ANY($1)`,
+      [REVENUE_STATUSES],
+    );
+
+    const revenueDaily = await this.dataSource.query<
+      { date: string; revenue: string }[]
+    >(
+      `SELECT to_char(d.day, 'YYYY-MM-DD') AS date,
+              COALESCE(SUM(o.total_amount), 0) AS revenue
+       FROM generate_series(
+         date_trunc('day', CURRENT_DATE) - INTERVAL '29 days',
+         date_trunc('day', CURRENT_DATE),
+         INTERVAL '1 day'
+       ) d(day)
+       LEFT JOIN orders o
+         ON date_trunc('day', o.created_at) = d.day
+         AND o.status::text = ANY($1)
+       GROUP BY d.day ORDER BY d.day`,
+      [REVENUE_STATUSES],
+    );
+
+    const revenueMonthly = await this.dataSource.query<
+      { month: string; revenue: string }[]
+    >(
+      `SELECT to_char(m.month, 'YYYY-MM') AS month,
+              COALESCE(SUM(o.total_amount), 0) AS revenue
+       FROM generate_series(
+         date_trunc('month', CURRENT_DATE) - INTERVAL '11 months',
+         date_trunc('month', CURRENT_DATE),
+         INTERVAL '1 month'
+       ) m(month)
+       LEFT JOIN orders o
+         ON date_trunc('month', o.created_at) = m.month
+         AND o.status::text = ANY($1)
+       GROUP BY m.month ORDER BY m.month`,
+      [REVENUE_STATUSES],
+    );
+
+    const categoryRevenue = await this.dataSource.query<
+      { categoryName: string; revenue: string }[]
+    >(
+      `SELECT c.name AS "categoryName",
+              COALESCE(SUM(oi.price_at_order * oi.quantity), 0) AS revenue
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       JOIN product_options po ON po.id = oi.product_option_id
+       JOIN products p ON p.id = po.product_id
+       JOIN categories c ON c.id = p.category_id
+       WHERE o.status::text = ANY($1)
+       GROUP BY c.name ORDER BY revenue DESC`,
+      [REVENUE_STATUSES],
+    );
+
+    const topProducts = await this.dataSource.query<
+      { productName: string; revenue: string }[]
+    >(
+      `SELECT p.name AS "productName",
+              COALESCE(SUM(oi.price_at_order * oi.quantity), 0) AS revenue
+       FROM order_items oi
+       JOIN orders o ON o.id = oi.order_id
+       JOIN product_options po ON po.id = oi.product_option_id
+       JOIN products p ON p.id = po.product_id
+       WHERE o.status::text = ANY($1)
+       GROUP BY p.id, p.name ORDER BY revenue DESC LIMIT 5`,
+      [REVENUE_STATUSES],
+    );
+
+    const orderStatusDistribution = await this.dataSource.query<
+      { status: string; count: string }[]
+    >(
+      `SELECT status::text AS status, COUNT(*) AS count
+       FROM orders GROUP BY status ORDER BY status`,
+    );
+
+    return {
+      summary: {
+        totalRevenue: Number(summaryRows[0]?.revenue ?? 0),
+        totalOrders: Number(summaryRows[0]?.orders ?? 0),
+        totalUnits: Number(unitsRows[0]?.units ?? 0),
+      },
+      revenueDaily: revenueDaily.map((r) => ({
+        date: r.date,
+        revenue: Number(r.revenue),
+      })),
+      revenueMonthly: revenueMonthly.map((r) => ({
+        month: r.month,
+        revenue: Number(r.revenue),
+      })),
+      categoryRevenue: categoryRevenue.map((r) => ({
+        categoryName: r.categoryName,
+        revenue: Number(r.revenue),
+      })),
+      topProducts: topProducts.map((r) => ({
+        productName: r.productName,
+        revenue: Number(r.revenue),
+      })),
+      orderStatusDistribution: orderStatusDistribution.map((r) => ({
+        status: r.status,
+        count: Number(r.count),
+      })),
+    };
   }
 
   async updateOrderStatus(

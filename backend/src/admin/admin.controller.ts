@@ -93,6 +93,16 @@ export class AdminController {
   }
 
   @ApiOperation({
+    summary:
+      '대시보드 통계 (매출 요약/추이·카테고리별·인기 상품·주문 상태 분포). 매출은 PAID·SHIPPED·DELIVERED만 집계',
+  })
+  @UseGuards(AdminGuard)
+  @Get('stats')
+  getStats() {
+    return this.adminService.getStats();
+  }
+
+  @ApiOperation({
     summary: '주문 목록 (상태 필터 + 페이지네이션 + 구매자 검색)',
   })
   @UseGuards(AdminGuard)
