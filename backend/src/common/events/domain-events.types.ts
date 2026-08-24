@@ -6,6 +6,9 @@ export interface StockUpdateEvent {
   size: string;
   color: string;
   stock: number;
+  // 신규 옵션 추가로 재고 목록에 없던 항목이 SSE로 들어올 때 카테고리 그룹핑에 쓰인다(이슈 #88).
+  // 기존 옵션 재고 변경(주문/재입고)은 프론트가 기존 항목에 병합하므로 없어도 무방.
+  categoryName?: string;
 }
 
 export interface OrderUpdateEvent {

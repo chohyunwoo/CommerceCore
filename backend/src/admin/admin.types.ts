@@ -102,3 +102,28 @@ export interface PaginatedBuyers {
   page: number;
   totalPages: number;
 }
+
+export interface AdminProductOptionItem {
+  id: number;
+  size: string;
+  color: string;
+  stock: number;
+  sku: string;
+}
+
+export interface AdminProductItem {
+  id: number;
+  name: string;
+  categoryName: string;
+  basePrice: number;
+  imageUrl: string | null;
+  totalStock: number;
+  options: AdminProductOptionItem[];
+}
+
+export interface PaginatedAdminProducts {
+  items: AdminProductItem[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
