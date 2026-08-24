@@ -234,6 +234,7 @@ function AdminShell({ onAuthError }: ShellProps) {
           <AdminInventoryPage
             stock={stock}
             statusFilterRequest={stockFilterReq}
+            onAuthError={onAuthError}
           />
         )}
         {section === 'members' && (

@@ -143,6 +143,7 @@ export interface PaginatedMyOrders {
 
 export interface StockOverviewItem {
   productOptionId: number;
+  productId: number;
   productName: string;
   categoryName: string;
   size: string;

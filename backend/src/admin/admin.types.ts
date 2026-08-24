@@ -2,6 +2,7 @@ import { DeliveryEventItem } from '../orders/orders.types';
 
 export interface StockOverviewItem {
   productOptionId: number;
+  productId: number;
   productName: string;
   categoryName: string;
   size: string;

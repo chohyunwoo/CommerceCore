@@ -2,6 +2,7 @@ import { DeliveryEventItem } from '../../orders/orders.types';
 
 export interface StockUpdateEvent {
   productOptionId: number;
+  productId: number;
   productName: string;
   size: string;
   color: string;

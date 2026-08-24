@@ -184,6 +184,7 @@ export class OrdersService {
     for (const option of options) {
       this.domainEvents.emitStockUpdate({
         productOptionId: option.id,
+        productId: option.productId,
         productName: productById.get(option.productId)!.name,
         size: option.size,
         color: option.color,

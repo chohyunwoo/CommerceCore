@@ -4,12 +4,13 @@ import {
   addProductOption,
   fetchAdminProducts,
   softDeleteProduct,
-  updateOptionStock,
 } from '../api/admin';
 import type { AdminProductItem } from '../api/types';
 import { AdminProductForm } from './AdminProductForm';
 
 const PAGE_SIZE = 20;
+
+type SubTab = 'list' | 'create';
 
 type NewOptionDraft = { size: string; color: string; stock: string; sku: string };
 
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export function AdminProductsPage({ onAuthError }: Props) {
+  const [subTab, setSubTab] = useState<SubTab>('list');
   const [products, setProducts] = useState<AdminProductItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -29,8 +31,6 @@ export function AdminProductsPage({ onAuthError }: Props) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // 옵션별 재고 입력 임시값(productOptionId -> 값)
-  const [stockDraft, setStockDraft] = useState<Record<number, string>>({});
   // 상품별 새 옵션 입력값(productId -> draft)
   const [newOption, setNewOption] = useState<Record<number, NewOptionDraft>>({});
 
@@ -86,24 +86,6 @@ export function AdminProductsPage({ onAuthError }: Props) {
     });
   }
 
-  function handleRestock(productId: number, optionId: number) {
-    const raw = stockDraft[optionId];
-    const value = Number(raw);
-    if (raw === undefined || raw === '' || !Number.isInteger(value) || value < 0) {
-      setError('재고는 0 이상의 정수여야 합니다.');
-      return;
-    }
-    withError(async () => {
-      await updateOptionStock(productId, optionId, value);
-      setStockDraft((prev) => {
-        const next = { ...prev };
-        delete next[optionId];
-        return next;
-      });
-      await load();
-    });
-  }
-
   function handleAddOption(productId: number) {
     const draft = newOption[productId] ?? EMPTY_OPTION;
     const stock = Number(draft.stock);
@@ -131,247 +113,262 @@ export function AdminProductsPage({ onAuthError }: Props) {
 
   return (
     <section id="admin-products">
-      <p className="admin-section-title">상품 목록</p>
+      <p className="admin-section-title">상품 관리</p>
 
-      <form className="admin-search-form" onSubmit={handleSearchSubmit}>
-        <input
-          type="text"
-          className="admin-search-input"
-          placeholder="상품명 검색"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-        />
-        <button type="submit" className="order-action-btn primary">
-          검색
+      <div className="category-filter">
+        <button
+          type="button"
+          className={subTab === 'list' ? 'active' : ''}
+          onClick={() => setSubTab('list')}
+        >
+          목록
         </button>
-        {search && (
-          <button
-            type="button"
-            className="order-action-btn"
-            onClick={() => {
-              setSearchInput('');
-              setSearch('');
-              setPage(1);
-            }}
-          >
-            초기화
-          </button>
-        )}
-      </form>
+        <button
+          type="button"
+          className={subTab === 'create' ? 'active' : ''}
+          onClick={() => setSubTab('create')}
+        >
+          신규 등록
+        </button>
+      </div>
 
-      {error && <p className="admin-login-error">{error}</p>}
-
-      {loading ? (
-        <p style={{ color: 'var(--text-sub)', fontSize: '13px' }}>
-          불러오는 중...
-        </p>
+      {subTab === 'create' ? (
+        <AdminProductForm
+          onAuthError={onAuthError}
+          onCreated={() => {
+            setSubTab('list');
+            setPage(1);
+            void load();
+          }}
+        />
       ) : (
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>상품</th>
-              <th>카테고리</th>
-              <th>가격</th>
-              <th>총재고</th>
-              <th>관리</th>
-            </tr>
-          </thead>
-          <tbody>
-            {products.length === 0 ? (
-              <tr>
-                <td colSpan={5} style={{ color: 'var(--text-sub)' }}>
-                  상품이 없습니다.
-                </td>
-              </tr>
-            ) : (
-              products.map((product) => {
-                const isOpen = expanded === product.id;
-                const draft = newOption[product.id] ?? EMPTY_OPTION;
-                return (
-                  <Fragment key={product.id}>
-                    <tr>
-                      <td>{product.name}</td>
-                      <td>{product.categoryName}</td>
-                      <td>{product.basePrice.toLocaleString()}원</td>
-                      <td>{product.totalStock.toLocaleString()}</td>
-                      <td>
-                        <div className="order-actions">
-                          <button
-                            type="button"
-                            className="order-action-btn"
-                            onClick={() =>
-                              setExpanded(isOpen ? null : product.id)
-                            }
-                          >
-                            {isOpen ? '옵션 닫기' : '옵션 관리'}
-                          </button>
-                          <button
-                            type="button"
-                            className="order-action-btn danger"
-                            disabled={busy}
-                            onClick={() => handleDelete(product)}
-                          >
-                            삭제
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    {isOpen && (
-                      <tr className="delivery-detail-row">
-                        <td colSpan={5}>
-                          <div className="delivery-panel">
-                            <table className="admin-table" style={{ marginBottom: 16 }}>
-                              <thead>
-                                <tr>
-                                  <th>사이즈</th>
-                                  <th>색상</th>
-                                  <th>SKU</th>
-                                  <th>재고</th>
-                                  <th>재입고</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {product.options.map((opt) => (
-                                  <tr key={opt.id}>
-                                    <td>{opt.size}</td>
-                                    <td>{opt.color}</td>
-                                    <td>{opt.sku}</td>
-                                    <td>{opt.stock}</td>
-                                    <td>
-                                      <div className="order-actions">
-                                        <input
-                                          className="shipping-form-input"
-                                          type="number"
-                                          min={0}
-                                          placeholder={String(opt.stock)}
-                                          value={stockDraft[opt.id] ?? ''}
-                                          onChange={(e) =>
-                                            setStockDraft((prev) => ({
-                                              ...prev,
-                                              [opt.id]: e.target.value,
-                                            }))
-                                          }
-                                        />
-                                        <button
-                                          type="button"
-                                          className="order-action-btn primary"
-                                          disabled={busy}
-                                          onClick={() =>
-                                            handleRestock(product.id, opt.id)
-                                          }
-                                        >
-                                          저장
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+        <>
+          <form className="admin-search-form" onSubmit={handleSearchSubmit}>
+            <input
+              type="text"
+              className="admin-search-input"
+              placeholder="상품명 검색"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
+            <button type="submit" className="order-action-btn primary">
+              검색
+            </button>
+            {search && (
+              <button
+                type="button"
+                className="order-action-btn"
+                onClick={() => {
+                  setSearchInput('');
+                  setSearch('');
+                  setPage(1);
+                }}
+              >
+                초기화
+              </button>
+            )}
+          </form>
 
-                            <p className="stock-category-title">옵션 추가</p>
+          {error && <p className="admin-login-error">{error}</p>}
+
+          {loading ? (
+            <p style={{ color: 'var(--text-sub)', fontSize: '13px' }}>
+              불러오는 중...
+            </p>
+          ) : (
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>상품</th>
+                  <th>카테고리</th>
+                  <th>가격</th>
+                  <th>총재고</th>
+                  <th>관리</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ color: 'var(--text-sub)' }}>
+                      상품이 없습니다.
+                    </td>
+                  </tr>
+                ) : (
+                  products.map((product) => {
+                    const isOpen = expanded === product.id;
+                    const draft = newOption[product.id] ?? EMPTY_OPTION;
+                    return (
+                      <Fragment key={product.id}>
+                        <tr>
+                          <td>{product.name}</td>
+                          <td>{product.categoryName}</td>
+                          <td>{product.basePrice.toLocaleString()}원</td>
+                          <td>{product.totalStock.toLocaleString()}</td>
+                          <td>
                             <div className="order-actions">
-                              <input
-                                className="shipping-form-input"
-                                placeholder="사이즈"
-                                value={draft.size}
-                                onChange={(e) =>
-                                  setNewOption((prev) => ({
-                                    ...prev,
-                                    [product.id]: { ...draft, size: e.target.value },
-                                  }))
-                                }
-                              />
-                              <input
-                                className="shipping-form-input"
-                                placeholder="색상"
-                                value={draft.color}
-                                onChange={(e) =>
-                                  setNewOption((prev) => ({
-                                    ...prev,
-                                    [product.id]: {
-                                      ...draft,
-                                      color: e.target.value,
-                                    },
-                                  }))
-                                }
-                              />
-                              <input
-                                className="shipping-form-input"
-                                placeholder="SKU"
-                                value={draft.sku}
-                                onChange={(e) =>
-                                  setNewOption((prev) => ({
-                                    ...prev,
-                                    [product.id]: { ...draft, sku: e.target.value },
-                                  }))
-                                }
-                              />
-                              <input
-                                className="shipping-form-input"
-                                type="number"
-                                min={0}
-                                placeholder="재고"
-                                value={draft.stock}
-                                onChange={(e) =>
-                                  setNewOption((prev) => ({
-                                    ...prev,
-                                    [product.id]: {
-                                      ...draft,
-                                      stock: e.target.value,
-                                    },
-                                  }))
-                                }
-                              />
                               <button
                                 type="button"
-                                className="order-action-btn primary"
-                                disabled={busy}
-                                onClick={() => handleAddOption(product.id)}
+                                className="order-action-btn"
+                                onClick={() =>
+                                  setExpanded(isOpen ? null : product.id)
+                                }
                               >
-                                추가
+                                {isOpen ? '옵션 닫기' : '옵션 관리'}
+                              </button>
+                              <button
+                                type="button"
+                                className="order-action-btn danger"
+                                disabled={busy}
+                                onClick={() => handleDelete(product)}
+                              >
+                                삭제
                               </button>
                             </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      )}
+                          </td>
+                        </tr>
+                        {isOpen && (
+                          <tr className="delivery-detail-row">
+                            <td colSpan={5}>
+                              <div className="delivery-panel">
+                                <table
+                                  className="admin-table"
+                                  style={{ marginBottom: 16 }}
+                                >
+                                  <thead>
+                                    <tr>
+                                      <th>사이즈</th>
+                                      <th>색상</th>
+                                      <th>SKU</th>
+                                      <th>재고</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {product.options.map((opt) => (
+                                      <tr key={opt.id}>
+                                        <td>{opt.size}</td>
+                                        <td>{opt.color}</td>
+                                        <td>{opt.sku}</td>
+                                        <td>{opt.stock}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                                <p
+                                  style={{
+                                    fontSize: '12px',
+                                    color: 'var(--text-sub)',
+                                    marginBottom: 8,
+                                  }}
+                                >
+                                  재고 수정(재입고)은 '재고 관리'에서 합니다.
+                                </p>
 
-      {totalPages > 1 && (
-        <div className="pagination">
-          <button
-            type="button"
-            className="pagination-btn"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-          >
-            이전
-          </button>
-          <span style={{ fontSize: '13px', color: 'var(--text-sub)' }}>
-            {page} / {totalPages}
-          </span>
-          <button
-            type="button"
-            className="pagination-btn"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-          >
-            다음
-          </button>
-        </div>
-      )}
+                                <p className="stock-category-title">옵션 추가</p>
+                                <div className="order-actions">
+                                  <input
+                                    className="shipping-form-input"
+                                    placeholder="사이즈"
+                                    value={draft.size}
+                                    onChange={(e) =>
+                                      setNewOption((prev) => ({
+                                        ...prev,
+                                        [product.id]: {
+                                          ...draft,
+                                          size: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                  />
+                                  <input
+                                    className="shipping-form-input"
+                                    placeholder="색상"
+                                    value={draft.color}
+                                    onChange={(e) =>
+                                      setNewOption((prev) => ({
+                                        ...prev,
+                                        [product.id]: {
+                                          ...draft,
+                                          color: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                  />
+                                  <input
+                                    className="shipping-form-input"
+                                    placeholder="SKU"
+                                    value={draft.sku}
+                                    onChange={(e) =>
+                                      setNewOption((prev) => ({
+                                        ...prev,
+                                        [product.id]: {
+                                          ...draft,
+                                          sku: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                  />
+                                  <input
+                                    className="shipping-form-input"
+                                    type="number"
+                                    min={0}
+                                    placeholder="재고"
+                                    value={draft.stock}
+                                    onChange={(e) =>
+                                      setNewOption((prev) => ({
+                                        ...prev,
+                                        [product.id]: {
+                                          ...draft,
+                                          stock: e.target.value,
+                                        },
+                                      }))
+                                    }
+                                  />
+                                  <button
+                                    type="button"
+                                    className="order-action-btn primary"
+                                    disabled={busy}
+                                    onClick={() => handleAddOption(product.id)}
+                                  >
+                                    추가
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          )}
 
-      <div style={{ marginTop: 48 }}>
-        <p className="admin-section-title">신규 상품 등록</p>
-        <AdminProductForm onAuthError={onAuthError} onCreated={() => void load()} />
-      </div>
+          {totalPages > 1 && (
+            <div className="pagination">
+              <button
+                type="button"
+                className="pagination-btn"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                이전
+              </button>
+              <span style={{ fontSize: '13px', color: 'var(--text-sub)' }}>
+                {page} / {totalPages}
+              </span>
+              <button
+                type="button"
+                className="pagination-btn"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+              >
+                다음
+              </button>
+            </div>
+          )}
+        </>
+      )}
     </section>
   );
 }
