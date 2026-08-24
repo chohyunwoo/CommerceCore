@@ -10,9 +10,10 @@ import {
   Query,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ProductsService } from './products.service';
 import { SearchByImageDto } from './dto/search-by-image.dto';
+import { ProductListQueryDto } from './dto/product-list-query.dto';
 
 @ApiTags('products')
 @UseInterceptors(CacheInterceptor)
@@ -22,19 +23,12 @@ export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   @ApiOperation({ summary: '카테고리별 상품 목록 조회 (페이지네이션)' })
-  @ApiQuery({ name: 'category', required: false })
-  @ApiQuery({ name: 'page', required: false })
-  @ApiQuery({ name: 'limit', required: false })
   @Get()
-  findAll(
-    @Query('category') category?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
+  findAll(@Query() query: ProductListQueryDto) {
     return this.productsService.findAll(
-      category,
-      page ? parseInt(page, 10) : 1,
-      limit ? parseInt(limit, 10) : 12,
+      query.category,
+      query.page,
+      query.limit,
     );
   }
 

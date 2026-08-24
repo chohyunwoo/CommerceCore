@@ -15,19 +15,22 @@ export class LoggingInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const request = context.switchToHttp().getRequest<Request>();
-    const { method, originalUrl } = request;
+    const { method } = request;
+    // 쿼리스트링은 로그에 남기지 않는다 — /orders/lookup?email=(PII),
+    // /admin/events?ticket=(SSE 단기 티켓) 등 민감 값이 평문으로 축적되는 것을 방지.
+    const path = request.originalUrl.split('?')[0];
     const start = Date.now();
 
     return next.handle().pipe(
       tap({
         next: () => {
           const response = context.switchToHttp().getResponse<Response>();
-          this.log(method, originalUrl, response.statusCode, start);
+          this.log(method, path, response.statusCode, start);
         },
         error: (error: unknown) => {
           const status =
             error instanceof HttpException ? error.getStatus() : 500;
-          this.log(method, originalUrl, status, start);
+          this.log(method, path, status, start);
         },
       }),
     );
