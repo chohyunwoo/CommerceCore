@@ -81,7 +81,7 @@ export function ImageSearchPage() {
 
       {results && results.length === 0 && (
         <p style={{ color: 'var(--text-sub)', fontSize: '13px', marginTop: '24px' }}>
-          비교할 수 있는 상품 이미지가 없습니다.
+          유사한 상품을 찾지 못했습니다. 상품 사진에 가까운 이미지로 다시 시도해 주세요.
         </p>
       )}
 
