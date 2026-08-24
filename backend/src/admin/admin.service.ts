@@ -163,8 +163,10 @@ export class AdminService {
   }
 
   async getStockOverview(): Promise<StockOverviewItem[]> {
+    // 소프트 삭제된 상품의 옵션은 재고 현황에서 제외한다(이슈 #88).
     const options = await this.productOptionRepository.find({
       relations: { product: { category: true } },
+      where: { product: { isActive: true } },
       order: { product: { categoryId: 'ASC' }, id: 'ASC' },
     });
 

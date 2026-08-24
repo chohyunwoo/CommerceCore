@@ -32,9 +32,12 @@ export class ProductsService {
     page = 1,
     limit = 12,
   ): Promise<PaginatedProducts> {
+    // 소프트 삭제된(is_active=false) 상품은 고객 목록에서 제외한다(이슈 #88).
     const [items, total] = await this.productRepository.findAndCount({
       relations: { category: true },
-      where: categoryName ? { category: { name: categoryName } } : undefined,
+      where: categoryName
+        ? { isActive: true, category: { name: categoryName } }
+        : { isActive: true },
       order: { id: 'ASC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -45,7 +48,7 @@ export class ProductsService {
 
   async findOne(id: number): Promise<Product> {
     const product = await this.productRepository.findOne({
-      where: { id },
+      where: { id, isActive: true },
       relations: { category: true, options: true },
     });
 
@@ -61,7 +64,7 @@ export class ProductsService {
 
   async searchByImage(embedding: number[]): Promise<ProductSearchResult[]> {
     const products = await this.productRepository.find({
-      where: { imageEmbedding: Not(IsNull()) },
+      where: { imageEmbedding: Not(IsNull()), isActive: true },
     });
 
     return products
