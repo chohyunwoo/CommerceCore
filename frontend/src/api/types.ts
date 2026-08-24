@@ -205,3 +205,16 @@ export interface CreateProductPayload {
 export interface UploadImageResult {
   url: string;
 }
+
+export interface AdminStats {
+  summary: {
+    totalRevenue: number;
+    totalUnits: number;
+    totalOrders: number;
+  };
+  revenueDaily: { date: string; revenue: number }[];
+  revenueMonthly: { month: string; revenue: number }[];
+  categoryRevenue: { categoryName: string; revenue: number }[];
+  topProducts: { productName: string; revenue: number }[];
+  orderStatusDistribution: { status: string; count: number }[];
+}

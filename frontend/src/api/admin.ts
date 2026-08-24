@@ -1,6 +1,7 @@
 import { apiGet, apiPatch, apiPost, apiPostForm } from './client';
 import { getSessionToken } from './auth';
 import type {
+  AdminStats,
   CategoryItem,
   CreateProductPayload,
   PaginatedRecentOrders,
@@ -17,6 +18,10 @@ function adminHeaders(): Record<string, string> {
 
 export function fetchStockOverview(): Promise<StockOverviewItem[]> {
   return apiGet<StockOverviewItem[]>('/admin/stock-overview', adminHeaders());
+}
+
+export function fetchStats(): Promise<AdminStats> {
+  return apiGet<AdminStats>('/admin/stats', adminHeaders());
 }
 
 export function fetchRecentOrders(

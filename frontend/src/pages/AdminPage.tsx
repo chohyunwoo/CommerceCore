@@ -209,7 +209,9 @@ function AdminShell({ onAuthError }: ShellProps) {
           </button>
         )}
 
-        {section === 'dashboard' && <AdminDashboardPage />}
+        {section === 'dashboard' && (
+          <AdminDashboardPage onAuthError={onAuthError} />
+        )}
         {section === 'orders' && (
           <AdminOrdersPage
             orderUpdateNonce={orderUpdateNonce}
