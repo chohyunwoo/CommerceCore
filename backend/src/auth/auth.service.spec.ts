@@ -1,5 +1,12 @@
 import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service';
+
+// compare만 실제 구현을 감싼 jest.fn으로 대체 — 동작(해시 비교)은 그대로 두고 호출만 관찰한다.
+// (bcryptjs의 export는 non-configurable이라 jest.spyOn이 불가능해 모듈 목으로 처리)
+jest.mock('bcryptjs', () => {
+  const actual = jest.requireActual('bcryptjs');
+  return { ...actual, compare: jest.fn(actual.compare) };
+});
 import { User } from './entities/user.entity';
 import { AppException } from '../common/errors/app-exception';
 import { AppErrors, AppErrorDefinition } from '../common/errors/app-errors';
@@ -123,6 +130,19 @@ describe('AuthService.login', () => {
       service.login({ email: 'a@b.com', password: 'password1234' }),
       AppErrors.INVALID_CREDENTIALS,
     );
+  });
+
+  it('존재하지 않는 이메일이어도 bcrypt.compare를 수행해 타이밍을 균일화한다', async () => {
+    const { service } = createAuthService(null);
+    (bcrypt.compare as jest.Mock).mockClear();
+
+    await expectAppError(
+      service.login({ email: 'nobody@b.com', password: 'password1234' }),
+      AppErrors.INVALID_CREDENTIALS,
+    );
+
+    // 미존재 계정에서도 compare가 호출되어야 존재 계정과 응답 시간이 구분되지 않는다.
+    expect(bcrypt.compare as jest.Mock).toHaveBeenCalledTimes(1);
   });
 
   it('비밀번호가 틀리면 INVALID_CREDENTIALS를 던진다', async () => {

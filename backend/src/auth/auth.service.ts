@@ -16,6 +16,14 @@ import { AppException } from '../common/errors/app-exception';
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 14; // 14일, 장바구니 TTL과 동일 기준(결정 3)
 const BCRYPT_SALT_ROUNDS = 10;
 
+/**
+ * 존재하지 않는 이메일로 로그인해도 실제 계정과 동일하게 bcrypt 비교를 1회 수행하기 위한
+ * 더미 해시(임의 비밀번호를 BCRYPT_SALT_ROUNDS로 해싱한 고정 값). 미존재 시 즉시 반환하면
+ * 응답 시간 차이로 가입 여부가 열거되므로(타이밍 사이드채널), 경로별 소요시간을 균일화한다.
+ */
+const DUMMY_PASSWORD_HASH =
+  '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+
 function sessionKey(token: string): string {
   return `session:${token}`;
 }
@@ -58,15 +66,13 @@ export class AuthService {
     const user = await this.userRepository.findOne({
       where: { email: dto.email },
     });
-    if (!user) {
-      throw new AppException(AppErrors.INVALID_CREDENTIALS);
-    }
 
+    // 사용자가 없어도 더미 해시에 대해 compare를 수행해 존재/미존재 경로의 소요시간을 맞춘다.
     const passwordMatches = await bcrypt.compare(
       dto.password,
-      user.passwordHash,
+      user?.passwordHash ?? DUMMY_PASSWORD_HASH,
     );
-    if (!passwordMatches) {
+    if (!user || !passwordMatches) {
       throw new AppException(AppErrors.INVALID_CREDENTIALS);
     }
 
