@@ -723,10 +723,8 @@
 }
 
 #admin-product-form {
-  padding: 32px 40px 60px;
   width: 100%;
   max-width: 700px;
-  margin: 0 auto;
 }
 
 .admin-header {
@@ -1089,4 +1087,162 @@
   font-size: 11px;
   color: var(--text-sub);
   margin-top: 2px;
+}
+
+/* ===== 관리자 사이드바 레이아웃 (대시보드 개편 1단계) ===== */
+.admin-layout {
+  display: flex;
+  align-items: stretch;
+  max-width: 1400px;
+  margin: 0 auto;
+  min-height: 70vh;
+}
+
+.admin-sidebar {
+  flex-shrink: 0;
+  width: 200px;
+  border-right: 1px solid var(--border);
+  padding: 32px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.admin-sidebar-title {
+  font-size: 13px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-sub);
+}
+
+.admin-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-nav button {
+  text-align: left;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 13px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-sub);
+  transition: background 0.15s, color 0.15s;
+}
+
+.admin-nav button:hover {
+  color: var(--text);
+  background: #f4f4f4;
+}
+
+.admin-nav button.active {
+  color: var(--text);
+  background: #eeeeee;
+  font-weight: 600;
+}
+
+.admin-sidebar-status {
+  margin-top: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-sub);
+}
+
+.admin-content {
+  flex: 1;
+  min-width: 0;
+  padding: 32px 40px 60px;
+}
+
+.stock-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  color: #7a5b00;
+  background: #fdf6e3;
+  border: 1px solid #f0c36d;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 28px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.stock-alert-banner:hover {
+  background: #fbeecb;
+}
+
+.stock-alert-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #e0a800;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.stock-alert-cta {
+  margin-left: auto;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+.stock-low {
+  color: #b7791f;
+  font-weight: 600;
+}
+
+.admin-placeholder {
+  padding: 8px 0;
+}
+
+.admin-placeholder-text {
+  font-size: 13px;
+  color: var(--text-sub);
+  margin-top: 12px;
+}
+
+@media (max-width: 720px) {
+  .admin-layout {
+    flex-direction: column;
+    min-height: 0;
+  }
+  .admin-sidebar {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 16px 20px;
+  }
+  .admin-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .admin-sidebar-status {
+    margin-top: 0;
+  }
+  .admin-content {
+    padding: 24px 20px 48px;
+  }
 }
