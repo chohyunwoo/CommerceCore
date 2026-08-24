@@ -35,6 +35,11 @@ import { AuthModule } from './auth/auth.module';
       useFactory: (configService: ConfigService) => {
         const databaseUrl = configService.get<string>('DATABASE_URL');
         const poolMax = configService.get<number>('DB_POOL_MAX', 10);
+        // 결정 29 → 배포 시 마이그레이션 자동 적용으로 전환(migrationsRun). 마이그레이션은
+        // 전부 멱등적이라 이미 적용된 환경에선 no-op이고, 매 PR CI에서 migration:run으로
+        // 사전 검증된다(실패 시 부팅이 크래시하므로 검증되지 않은 마이그레이션은 배포되지 않음).
+        // 글롭은 app.module 위치 기준(__dirname): 컴파일 시 dist/migrations/*.js, dev는 src/*.ts.
+        const migrations = [__dirname + '/migrations/*{.ts,.js}'];
         if (databaseUrl) {
           // 프로덕션: Supabase 등 URL 기반 연결 (SSL 필수)
           return {
@@ -44,6 +49,8 @@ import { AuthModule } from './auth/auth.module';
             extra: { max: poolMax },
             autoLoadEntities: true,
             synchronize: false,
+            migrations,
+            migrationsRun: true,
           };
         }
         // 로컬 개발: host/port 방식
@@ -57,6 +64,8 @@ import { AuthModule } from './auth/auth.module';
           extra: { max: poolMax },
           autoLoadEntities: true,
           synchronize: false,
+          migrations,
+          migrationsRun: true,
         };
       },
     }),
