@@ -19,9 +19,11 @@ function emptyOptionRow(): OptionRow {
 
 interface Props {
   onAuthError: () => void;
+  // 등록 성공 시 호출 — 상품 관리 화면에서 목록을 갱신하는 데 쓴다.
+  onCreated?: () => void;
 }
 
-export function AdminProductForm({ onAuthError }: Props) {
+export function AdminProductForm({ onAuthError, onCreated }: Props) {
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [name, setName] = useState('');
@@ -102,6 +104,7 @@ export function AdminProductForm({ onAuthError }: Props) {
 
       setSuccessName(created.name);
       resetForm();
+      onCreated?.();
     } catch (err: unknown) {
       if (err instanceof ApiError && err.statusCode === 401) {
         onAuthError();

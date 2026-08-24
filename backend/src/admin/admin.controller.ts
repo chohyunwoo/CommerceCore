@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   MessageEvent,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
@@ -27,8 +29,10 @@ import { DomainEventsService } from '../common/events/domain-events.service';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { CreateDeliveryEventDto } from './dto/create-delivery-event.dto';
 import { CreateProductDto } from './dto/create-product.dto';
+import { CreateProductOptionDto } from './dto/create-product-option.dto';
 import { RecentOrdersQueryDto } from './dto/recent-orders-query.dto';
 import { MemberSearchQueryDto } from './dto/member-search-query.dto';
+import { UpdateOptionStockDto } from './dto/update-option-stock.dto';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { AdminSseGuard } from '../common/guards/admin-sse.guard';
 import { SupabaseStorageService } from './supabase-storage.service';
@@ -59,6 +63,52 @@ export class AdminController {
   @Post('products')
   createProduct(@Body() dto: CreateProductDto) {
     return this.adminService.createProduct(dto);
+  }
+
+  @ApiOperation({
+    summary:
+      '관리자 상품 목록 (활성 상품, 옵션·총재고 포함. 이름 검색 + 페이지네이션)',
+  })
+  @UseGuards(AdminGuard)
+  @Get('products')
+  getAdminProducts(@Query() query: MemberSearchQueryDto) {
+    return this.adminService.getAdminProducts(
+      query.page,
+      query.limit,
+      query.search,
+    );
+  }
+
+  @ApiOperation({
+    summary: '상품 소프트 삭제 (is_active=false, 주문 이력 보존)',
+  })
+  @UseGuards(AdminGuard)
+  @Delete('products/:id')
+  async softDeleteProduct(@Param('id', ParseIntPipe) id: number) {
+    await this.adminService.softDeleteProduct(id);
+    // apiDelete가 성공 응답의 JSON을 파싱하므로 빈 204 대신 바디를 돌려준다.
+    return { id, deleted: true };
+  }
+
+  @ApiOperation({ summary: '기존 상품에 옵션 추가 (SKU 중복 거부)' })
+  @UseGuards(AdminGuard)
+  @Post('products/:id/options')
+  addProductOption(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateProductOptionDto,
+  ) {
+    return this.adminService.addProductOption(id, dto);
+  }
+
+  @ApiOperation({ summary: '재입고 (옵션 재고를 절대값으로 수정)' })
+  @UseGuards(AdminGuard)
+  @Patch('products/:productId/options/:optionId')
+  restockOption(
+    @Param('productId', ParseIntPipe) productId: number,
+    @Param('optionId', ParseIntPipe) optionId: number,
+    @Body() dto: UpdateOptionStockDto,
+  ) {
+    return this.adminService.restockOption(productId, optionId, dto.stock);
   }
 
   @ApiOperation({

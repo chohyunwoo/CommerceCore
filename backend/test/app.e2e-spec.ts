@@ -14,6 +14,7 @@ import {
 } from '../src/orders/orders.types';
 import {
   AdminStats,
+  PaginatedAdminProducts,
   PaginatedBuyers,
   PaginatedMembers,
   RecentOrderItem,
@@ -378,6 +379,175 @@ describe('관리자 API 접근 제어 (e2e)', () => {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  });
+});
+
+/**
+ * 관리자 상품 관리(소프트 삭제/재입고/옵션 추가)를 실제 AppModule(진짜 DB/Redis)로
+ * 검증한다 — 이슈 #88. 소프트 삭제 후 고객/관리자 노출에서 빠지는지, 재입고·옵션 추가가
+ * 반영되는지, role=user는 401인지 확인한다.
+ */
+describe('관리자 상품 관리 (e2e)', () => {
+  let app: INestApplication<App>;
+  let dataSource: DataSource;
+  let adminToken: string;
+  let categoryId: number;
+  let productId: number;
+  let optionId: number;
+  const adminEmail = 'e2e-pm-admin@example.com';
+  const userEmail = 'e2e-pm-user@example.com';
+  const productName = 'E2E상품관리테스트';
+  const sku = `E2E-PM-${Date.now()}`;
+  const addedSku = `E2E-PM-ADD-${Date.now()}`;
+
+  beforeEach(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.init();
+    dataSource = app.get(DataSource);
+    const server = app.getHttpServer();
+
+    await request(server)
+      .post('/auth/register')
+      .send({ email: adminEmail, password: 'password1234', name: '상품관리자' })
+      .expect(201);
+    await dataSource.query(`UPDATE users SET role = 'admin' WHERE email = $1`, [
+      adminEmail,
+    ]);
+    const loginRes = await request(server)
+      .post('/auth/login')
+      .send({ email: adminEmail, password: 'password1234' })
+      .expect(201);
+    adminToken = (loginRes.body as AuthResponse).token;
+
+    const [category] = await dataSource.query<{ id: string }[]>(
+      `INSERT INTO categories (name) VALUES ($1) RETURNING id`,
+      ['E2E관리카테고리'],
+    );
+    categoryId = Number(category.id);
+    const [product] = await dataSource.query<{ id: string }[]>(
+      `INSERT INTO products (category_id, name, base_price) VALUES ($1, $2, $3) RETURNING id`,
+      [categoryId, productName, 30000],
+    );
+    productId = Number(product.id);
+    const [option] = await dataSource.query<{ id: string }[]>(
+      `INSERT INTO product_options (product_id, size, color, stock, sku) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [productId, 'M', '블랙', 3, sku],
+    );
+    optionId = Number(option.id);
+  });
+
+  afterEach(async () => {
+    await dataSource.query(
+      `DELETE FROM product_options WHERE product_id = $1`,
+      [productId],
+    );
+    await dataSource.query(`DELETE FROM products WHERE id = $1`, [productId]);
+    await dataSource.query(`DELETE FROM categories WHERE id = $1`, [
+      categoryId,
+    ]);
+    await dataSource.query(`DELETE FROM users WHERE email = ANY($1)`, [
+      [adminEmail, userEmail],
+    ]);
+    await app.close();
+  });
+
+  it('소프트 삭제하면 고객 상세·관리자 목록에서 사라진다(주문 이력용 행은 남음)', async () => {
+    const server = app.getHttpServer();
+
+    // 삭제 전: 관리자 목록에 존재(관리자 목록은 캐시 대상이 아님).
+    // 고객 상세(GET /products/:id)는 CacheInterceptor(TTL 30초) 대상이라, 삭제 전에
+    // 조회하면 캐시가 남아 삭제 후에도 200이 나온다 — 여기선 조회하지 않는다.
+    const beforeRes = await request(server)
+      .get(`/admin/products?search=${encodeURIComponent(productName)}`)
+      .set('X-Session-Token', adminToken)
+      .expect(200);
+    expect(
+      (beforeRes.body as PaginatedAdminProducts).items.some(
+        (p) => p.id === productId,
+      ),
+    ).toBe(true);
+
+    await request(server)
+      .delete(`/admin/products/${productId}`)
+      .set('X-Session-Token', adminToken)
+      .expect(200);
+
+    // 삭제 후: 고객 상세 404(사전 캐시 없음), 관리자 목록에서 사라짐
+    await request(server).get(`/products/${productId}`).expect(404);
+
+    const listRes = await request(server)
+      .get(`/admin/products?search=${encodeURIComponent(productName)}`)
+      .set('X-Session-Token', adminToken)
+      .expect(200);
+    const list = listRes.body as PaginatedAdminProducts;
+    expect(list.items.some((p) => p.id === productId)).toBe(false);
+  });
+
+  it('재입고와 옵션 추가가 반영되고, 중복 SKU는 거부된다', async () => {
+    const server = app.getHttpServer();
+
+    await request(server)
+      .patch(`/admin/products/${productId}/options/${optionId}`)
+      .set('X-Session-Token', adminToken)
+      .send({ stock: 99 })
+      .expect(200);
+
+    await request(server)
+      .post(`/admin/products/${productId}/options`)
+      .set('X-Session-Token', adminToken)
+      .send({ size: 'L', color: '화이트', stock: 7, sku: addedSku })
+      .expect(201);
+
+    // 중복 SKU 거부
+    await request(server)
+      .post(`/admin/products/${productId}/options`)
+      .set('X-Session-Token', adminToken)
+      .send({ size: 'XL', color: '블랙', stock: 1, sku: addedSku })
+      .expect(409);
+
+    const listRes = await request(server)
+      .get(`/admin/products?search=${encodeURIComponent(productName)}`)
+      .set('X-Session-Token', adminToken)
+      .expect(200);
+    const product = (listRes.body as PaginatedAdminProducts).items.find(
+      (p) => p.id === productId,
+    );
+    expect(product).toBeDefined();
+    const restocked = product!.options.find((o) => o.id === optionId);
+    expect(restocked!.stock).toBe(99);
+    expect(product!.options.some((o) => o.sku === addedSku)).toBe(true);
+  });
+
+  it('role=user는 상품 관리 API에 접근할 수 없다(401)', async () => {
+    const server = app.getHttpServer();
+    const registerRes = await request(server)
+      .post('/auth/register')
+      .send({ email: userEmail, password: 'password1234', name: '일반' })
+      .expect(201);
+    const userToken = (registerRes.body as AuthResponse).token;
+
+    await request(server)
+      .get('/admin/products')
+      .set('X-Session-Token', userToken)
+      .expect(401);
+    await request(server)
+      .delete(`/admin/products/${productId}`)
+      .set('X-Session-Token', userToken)
+      .expect(401);
+    await request(server)
+      .patch(`/admin/products/${productId}/options/${optionId}`)
+      .set('X-Session-Token', userToken)
+      .send({ stock: 1 })
+      .expect(401);
+    await request(server)
+      .post(`/admin/products/${productId}/options`)
+      .set('X-Session-Token', userToken)
+      .send({ size: 'S', color: '블랙', stock: 1, sku: 'X' })
+      .expect(401);
   });
 });
 

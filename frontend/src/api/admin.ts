@@ -1,9 +1,11 @@
-import { apiGet, apiPatch, apiPost, apiPostForm } from './client';
+import { apiDelete, apiGet, apiPatch, apiPost, apiPostForm } from './client';
 import { getSessionToken } from './auth';
 import type {
+  AdminProductOptionItem,
   AdminStats,
   CategoryItem,
   CreateProductPayload,
+  PaginatedAdminProducts,
   PaginatedBuyers,
   PaginatedMembers,
   PaginatedRecentOrders,
@@ -24,6 +26,46 @@ export function fetchStockOverview(): Promise<StockOverviewItem[]> {
 
 export function fetchStats(): Promise<AdminStats> {
   return apiGet<AdminStats>('/admin/stats', adminHeaders());
+}
+
+export function fetchAdminProducts(
+  page = 1,
+  limit = 20,
+  search?: string,
+): Promise<PaginatedAdminProducts> {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (search) params.set('search', search);
+  return apiGet<PaginatedAdminProducts>(
+    `/admin/products?${params.toString()}`,
+    adminHeaders(),
+  );
+}
+
+export function softDeleteProduct(id: number): Promise<{ id: number }> {
+  return apiDelete<{ id: number }>(`/admin/products/${id}`, adminHeaders());
+}
+
+export function updateOptionStock(
+  productId: number,
+  optionId: number,
+  stock: number,
+): Promise<AdminProductOptionItem> {
+  return apiPatch<AdminProductOptionItem>(
+    `/admin/products/${productId}/options/${optionId}`,
+    { stock },
+    adminHeaders(),
+  );
+}
+
+export function addProductOption(
+  productId: number,
+  option: { size: string; color: string; stock: number; sku: string },
+): Promise<AdminProductOptionItem> {
+  return apiPost<AdminProductOptionItem>(
+    `/admin/products/${productId}/options`,
+    option,
+    adminHeaders(),
+  );
 }
 
 export function fetchMembers(

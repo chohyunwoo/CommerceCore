@@ -47,6 +47,7 @@ function createAdminService(
   const domainEvents = { emitOrderUpdate: jest.fn() };
   const paymentsService = { cancel: jest.fn().mockResolvedValue(undefined) };
   const productOptionRepository = { findOne: jest.fn() };
+  const productRepository = { findOne: jest.fn(), findAndCount: jest.fn() };
   const categoryRepository = { find: jest.fn(), findOne: jest.fn() };
   const deliveryEventRepository = { find: jest.fn().mockResolvedValue([]) };
   const orderRepository = {
@@ -56,6 +57,7 @@ function createAdminService(
 
   const service = new AdminService(
     productOptionRepository as never,
+    productRepository as never,
     orderRepository as never,
     categoryRepository as never,
     deliveryEventRepository as never,

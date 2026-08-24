@@ -16,10 +16,12 @@ import { DELIVERY_STAGE_ORDER } from '../orders/entities/delivery-stage.enum';
 import { DomainEventsService } from '../common/events/domain-events.service';
 import { PaymentsService } from '../payments/payments.service';
 import {
+  AdminProductOptionItem,
   AdminStats,
   BuyerItem,
   CategoryItem,
   MemberItem,
+  PaginatedAdminProducts,
   PaginatedBuyers,
   PaginatedMembers,
   PaginatedRecentOrders,
@@ -63,6 +65,8 @@ export class AdminService {
   constructor(
     @InjectRepository(ProductOption)
     private readonly productOptionRepository: Repository<ProductOption>,
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
     @InjectRepository(Order)
     private readonly orderRepository: Repository<Order>,
     @InjectRepository(Category)
@@ -163,8 +167,10 @@ export class AdminService {
   }
 
   async getStockOverview(): Promise<StockOverviewItem[]> {
+    // 소프트 삭제된 상품의 옵션은 재고 현황에서 제외한다(이슈 #88).
     const options = await this.productOptionRepository.find({
       relations: { product: { category: true } },
+      where: { product: { isActive: true } },
       order: { product: { categoryId: 'ASC' }, id: 'ASC' },
     });
 
@@ -422,6 +428,157 @@ export class AdminService {
       total,
       page,
       totalPages: Math.ceil(total / limit) || 1,
+    };
+  }
+
+  /** 관리자 상품 목록(활성 상품만). 옵션·총재고 포함, 이름 검색 + 페이지네이션(읽기, 이슈 #88). */
+  async getAdminProducts(
+    page = 1,
+    limit = 20,
+    search?: string,
+  ): Promise<PaginatedAdminProducts> {
+    const trimmed = search?.trim();
+    const where = trimmed
+      ? { isActive: true, name: ILike(`%${escapeLike(trimmed)}%`) }
+      : { isActive: true };
+
+    const [products, total] = await this.productRepository.findAndCount({
+      where,
+      relations: { category: true, options: true },
+      order: { id: 'ASC' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    return {
+      items: products.map((product) => ({
+        id: product.id,
+        name: product.name,
+        categoryName: product.category.name,
+        basePrice: product.basePrice,
+        imageUrl: product.imageUrl,
+        totalStock: product.options.reduce((sum, o) => sum + o.stock, 0),
+        options: product.options
+          .slice()
+          .sort((a, b) => a.id - b.id)
+          .map((o) => ({
+            id: o.id,
+            size: o.size,
+            color: o.color,
+            stock: o.stock,
+            sku: o.sku,
+          })),
+      })),
+      total,
+      page,
+      totalPages: Math.ceil(total / limit) || 1,
+    };
+  }
+
+  /** 상품 소프트 삭제 — is_active=false로만 바꾼다(하드 삭제 X, 주문 이력 보존, 이슈 #88). */
+  async softDeleteProduct(id: number): Promise<void> {
+    const product = await this.productRepository.findOne({
+      where: { id, isActive: true },
+    });
+    if (!product) {
+      throw new AppException(
+        AppErrors.PRODUCT_NOT_FOUND,
+        `상품(id: ${id})을 찾을 수 없습니다.`,
+      );
+    }
+    product.isActive = false;
+    await this.productRepository.save(product);
+  }
+
+  /** 재입고 — 옵션 재고를 절대값으로 덮어쓰고 SSE로 재고 화면에 실시간 반영(이슈 #88). */
+  async restockOption(
+    productId: number,
+    optionId: number,
+    stock: number,
+  ): Promise<AdminProductOptionItem> {
+    const option = await this.productOptionRepository.findOne({
+      where: { id: optionId, productId },
+      relations: { product: { category: true } },
+    });
+    if (!option) {
+      throw new AppException(
+        AppErrors.PRODUCT_OPTION_NOT_FOUND,
+        `상품 옵션(id: ${optionId})을 찾을 수 없습니다.`,
+      );
+    }
+
+    option.stock = stock;
+    await this.productOptionRepository.save(option);
+
+    this.domainEvents.emitStockUpdate({
+      productOptionId: option.id,
+      productName: option.product.name,
+      size: option.size,
+      color: option.color,
+      stock: option.stock,
+      categoryName: option.product.category.name,
+    });
+
+    return {
+      id: option.id,
+      size: option.size,
+      color: option.color,
+      stock: option.stock,
+      sku: option.sku,
+    };
+  }
+
+  /** 기존 상품에 옵션 추가(SKU 중복 거부). SSE로 재고 화면에 실시간 반영(이슈 #88). */
+  async addProductOption(
+    productId: number,
+    dto: { size: string; color: string; stock: number; sku: string },
+  ): Promise<AdminProductOptionItem> {
+    const product = await this.productRepository.findOne({
+      where: { id: productId, isActive: true },
+      relations: { category: true },
+    });
+    if (!product) {
+      throw new AppException(
+        AppErrors.PRODUCT_NOT_FOUND,
+        `상품(id: ${productId})을 찾을 수 없습니다.`,
+      );
+    }
+
+    const duplicate = await this.productOptionRepository.findOne({
+      where: { sku: dto.sku },
+    });
+    if (duplicate) {
+      throw new AppException(
+        AppErrors.SKU_ALREADY_EXISTS,
+        `SKU(${dto.sku})가 이미 존재합니다.`,
+      );
+    }
+
+    const option = await this.productOptionRepository.save(
+      this.productOptionRepository.create({
+        productId,
+        size: dto.size,
+        color: dto.color,
+        stock: dto.stock,
+        sku: dto.sku,
+      }),
+    );
+
+    this.domainEvents.emitStockUpdate({
+      productOptionId: option.id,
+      productName: product.name,
+      size: option.size,
+      color: option.color,
+      stock: option.stock,
+      categoryName: product.category.name,
+    });
+
+    return {
+      id: option.id,
+      size: option.size,
+      color: option.color,
+      stock: option.stock,
+      sku: option.sku,
     };
   }
 
