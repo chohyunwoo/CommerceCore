@@ -1093,6 +1093,7 @@
 .admin-layout {
   display: flex;
   align-items: stretch;
+  width: 100%;
   max-width: 1760px;
   margin: 0 auto;
   min-height: 70vh;
