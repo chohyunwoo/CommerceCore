@@ -630,4 +630,6 @@ CREATE TABLE order_items (
 35. ~~상품 관리 확장 — 재고 상태 필터 + 소프트 삭제/재입고/옵션 추가 (결정 43)~~ ✅ — 2026-08-24, 이슈 #88
 36. ~~이미지 검색 모델 CLIP → DINOv2(dinov2-small) 전환 — 스파이크로 분리도 4배·용량 24/84MB 검증 후 전환, 임계값 0.5→0.15 재보정, 카탈로그 임베딩 재계산 (결정 32 개정)~~ ✅ — 2026-08-24, 이슈 #96
 37. 후속(사용자) — 프로덕션 DB에 DINOv2 임베딩 재계산(`embeddings:compute`) 필요(모델 변경으로 512차원 CLIP 임베딩과 섞이면 검색 어긋남)
+36. ~~메인 상품 목록 검색(상품명)·가격 범위 필터·정렬(최신/가격/이름) 추가 — 서버사이드(GET /products 확장, findAll을 QueryBuilder로 전환, 정렬 화이트리스트·LIKE 이스케이프)~~ ✅ — 2026-08-24, 이슈 #94
+37. 후속(사용자 설정 필요) — 프로덕션 Supabase에 마이그레이션 적용(`AddProductIsActive`·`AddProductOptionIsActiveAndPartialUniqueSku`) — 미적용 시 `/admin/stock-overview` 등 500. `migrationsRun:true` 전환도 검토(결정 29 재검토 트리거).
 38. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)

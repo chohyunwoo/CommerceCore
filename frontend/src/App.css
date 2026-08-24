@@ -1089,6 +1089,86 @@
   margin-top: 2px;
 }
 
+/* ===== 상품 목록 검색/필터/정렬 툴바 ===== */
+.product-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 auto 24px;
+  max-width: 1400px;
+  padding: 0 40px;
+}
+
+.product-filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.product-search-input,
+.product-price-input {
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.product-search-input {
+  width: 200px;
+}
+
+.product-price-input {
+  width: 100px;
+}
+
+.product-price-sep {
+  color: var(--text-sub);
+  font-size: 13px;
+}
+
+.product-filter-btn {
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--text);
+  border-radius: 4px;
+  background: var(--text);
+  color: var(--bg);
+  cursor: pointer;
+}
+
+.product-filter-btn.ghost {
+  background: none;
+  color: var(--text-sub);
+  border-color: var(--border);
+}
+
+.product-sort-select {
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+@media (max-width: 600px) {
+  .product-toolbar {
+    padding: 0 20px;
+  }
+  .product-search-input {
+    width: 100%;
+  }
+}
+
 /* ===== 관리자 사이드바 레이아웃 (대시보드 개편 1단계) ===== */
 .admin-layout {
   display: flex;

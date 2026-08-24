@@ -6,12 +6,28 @@ import { AppErrors } from '../common/errors/app-errors';
 import { AppException } from '../common/errors/app-exception';
 import { cosineSimilarity } from './utils/cosine-similarity';
 import { ProductSearchResult } from './products.types';
+import { ProductSort } from './dto/product-list-query.dto';
 
 export interface PaginatedProducts {
   items: Product[];
   total: number;
   page: number;
   totalPages: number;
+}
+
+export interface FindProductsOptions {
+  category?: string;
+  page?: number;
+  limit?: number;
+  search?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  sort?: ProductSort;
+}
+
+// ILIKE 검색어의 LIKE 와일드카드(\ % _)를 리터럴로 이스케이프한다.
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (m) => `\\${m}`);
 }
 
 const SEARCH_BY_IMAGE_LIMIT = 5;
@@ -27,22 +43,56 @@ export class ProductsService {
     private readonly productRepository: Repository<Product>,
   ) {}
 
-  async findAll(
-    categoryName?: string,
-    page = 1,
-    limit = 12,
-  ): Promise<PaginatedProducts> {
-    // 소프트 삭제된(is_active=false) 상품은 고객 목록에서 제외한다(이슈 #88).
-    const [items, total] = await this.productRepository.findAndCount({
-      relations: { category: true },
-      where: categoryName
-        ? { isActive: true, category: { name: categoryName } }
-        : { isActive: true },
-      order: { id: 'ASC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+  async findAll(options: FindProductsOptions = {}): Promise<PaginatedProducts> {
+    const { category, search, minPrice, maxPrice, sort } = options;
+    const page = options.page ?? 1;
+    const limit = options.limit ?? 12;
 
+    const qb = this.productRepository
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.category', 'category')
+      // 소프트 삭제된(is_active=false) 상품은 고객 목록에서 제외한다(이슈 #88).
+      .where('product.isActive = :active', { active: true });
+
+    if (category) {
+      qb.andWhere('category.name = :category', { category });
+    }
+    const trimmedSearch = search?.trim();
+    if (trimmedSearch) {
+      qb.andWhere("product.name ILIKE :search ESCAPE '\\'", {
+        search: `%${escapeLike(trimmedSearch)}%`,
+      });
+    }
+    if (minPrice != null) {
+      qb.andWhere('product.basePrice >= :minPrice', { minPrice });
+    }
+    if (maxPrice != null) {
+      qb.andWhere('product.basePrice <= :maxPrice', { maxPrice });
+    }
+
+    // 정렬은 화이트리스트로만 매핑(사용자 입력을 컬럼/방향에 직접 넣지 않음).
+    switch (sort) {
+      case ProductSort.PRICE_ASC:
+        qb.orderBy('product.basePrice', 'ASC').addOrderBy('product.id', 'DESC');
+        break;
+      case ProductSort.PRICE_DESC:
+        qb.orderBy('product.basePrice', 'DESC').addOrderBy(
+          'product.id',
+          'DESC',
+        );
+        break;
+      case ProductSort.NAME:
+        qb.orderBy('product.name', 'ASC').addOrderBy('product.id', 'DESC');
+        break;
+      case ProductSort.LATEST:
+      default:
+        qb.orderBy('product.id', 'DESC');
+        break;
+    }
+
+    qb.skip((page - 1) * limit).take(limit);
+
+    const [items, total] = await qb.getManyAndCount();
     return { items, total, page, totalPages: Math.ceil(total / limit) };
   }
 
