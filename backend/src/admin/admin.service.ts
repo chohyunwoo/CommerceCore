@@ -176,6 +176,7 @@ export class AdminService {
 
     return options.map((option) => ({
       productOptionId: option.id,
+      productId: option.product.id,
       productName: option.product.name,
       categoryName: option.product.category.name,
       size: option.size,
@@ -512,6 +513,7 @@ export class AdminService {
 
     this.domainEvents.emitStockUpdate({
       productOptionId: option.id,
+      productId: option.productId,
       productName: option.product.name,
       size: option.size,
       color: option.color,
@@ -566,6 +568,7 @@ export class AdminService {
 
     this.domainEvents.emitStockUpdate({
       productOptionId: option.id,
+      productId,
       productName: product.name,
       size: option.size,
       color: option.color,
