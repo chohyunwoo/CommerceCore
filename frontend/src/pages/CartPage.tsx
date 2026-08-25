@@ -95,6 +95,7 @@ export function CartPage() {
 
       {error && <p className="error" style={{ marginBottom: '16px' }}>{error}</p>}
 
+      <div className="table-scroll">
       <table className="cart-table">
         <thead>
           <tr>
@@ -139,6 +140,7 @@ export function CartPage() {
           ))}
         </tbody>
       </table>
+      </div>
 
       <div className="cart-footer">
         <div className="cart-summary">
