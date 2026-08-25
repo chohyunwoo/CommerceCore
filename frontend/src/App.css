@@ -1173,9 +1173,22 @@
 
 @media (max-width: 600px) {
   .product-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
     padding: 0 20px;
   }
+  /* 검색창(늘어남) + 적용/초기화 버튼을 한 줄에 */
+  .product-filter-form {
+    flex-wrap: nowrap;
+  }
   .product-search-input {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+  /* 정렬 select는 아래 줄 전체폭 */
+  .product-sort-select {
     width: 100%;
   }
 }
@@ -1581,12 +1594,17 @@
     margin-bottom: 28px;
   }
 
-  /* --- 카테고리 필터 가로 스크롤 --- */
+  /* --- 카테고리 필터 가로 스크롤 (스크롤바 숨김) --- */
   .category-filter {
     gap: 24px;
+    margin-bottom: 24px;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     white-space: nowrap;
+    scrollbar-width: none; /* Firefox */
+  }
+  .category-filter::-webkit-scrollbar {
+    display: none; /* WebKit */
   }
   .category-filter button {
     flex: 0 0 auto;
