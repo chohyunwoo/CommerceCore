@@ -29,11 +29,13 @@ function escapeLike(value: string): string {
 }
 
 const SEARCH_BY_IMAGE_LIMIT = 5;
-// DINOv2 임베딩 기준 임계값(결정 32 개정). top-1 유사도 실측(보정 스파이크): 무관 이미지
-// (노트북/풍경/고양이 등)는 최대 0.382, 실제 상품 사진은 최소 0.417로 그 사이에 깨끗한
-// 간격이 있어 0.40을 운영점으로 둔다. 0.40 미만은 무관으로 보고 결과에서 제외(오리 캐릭터가
-// 운동화에 0.175로 오탐되던 문제 해소). 실사용 검색 로그가 쌓이면 재튜닝.
-const MIN_SIMILARITY = 0.4;
+// 하이브리드 방식(결정 32 재개정, 2026-08-25). 프로덕션 카탈로그(DINOv2 384차원 50개)
+// 실측: 같은 카테고리끼리도 유사도 중앙값 0.18~0.30(신발↔신발 중앙값 0.30, 0.40 이상은 35%뿐).
+// 즉 0.40 하드 컷오프는 실제 업로드 사진의 진짜 유사 상품까지 전부 걸러 결과가 비는 문제가 있었음.
+// → 하드 컷오프 대신 "명백히 무관한 것만 거르는 낮은 바닥값"만 두고 항상 가장 비슷한 상위 N개를 반환.
+// 무관 이미지는 최대 ~0.38까지 나올 수 있어 단일 임계값으로 정밀히 못 가르므로(정밀도↔재현율 트레이드오프),
+// "확신" 여부(SIMILARITY_CONFIDENT 미만이면 '정확히 일치하는 상품 없음' 안내)는 프론트가 similarity로 판단.
+const SIMILARITY_FLOOR = 0.15;
 
 @Injectable()
 export class ProductsService {
@@ -119,7 +121,7 @@ export class ProductsService {
         imageUrl: product.imageUrl,
         similarity: cosineSimilarity(embedding, product.imageEmbedding!),
       }))
-      .filter((result) => result.similarity >= MIN_SIMILARITY)
+      .filter((result) => result.similarity >= SIMILARITY_FLOOR)
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, SEARCH_BY_IMAGE_LIMIT);
   }
