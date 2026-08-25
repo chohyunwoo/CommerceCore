@@ -6,6 +6,10 @@ import { getProductImage } from '../lib/productImage';
 import { ApiError } from '../api/client';
 import type { ProductSearchResult } from '../api/types';
 
+// 이 값 이상이면 "확실히 비슷한 매치"로 보고, 미만이면 결과는 보여주되
+// "정확히 일치하는 상품은 없지만 비슷한 순" 안내를 띄운다(결정 32 하이브리드).
+const SIMILARITY_CONFIDENT = 0.3;
+
 export function ImageSearchPage() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -82,6 +86,12 @@ export function ImageSearchPage() {
       {results && results.length === 0 && (
         <p style={{ color: 'var(--text-sub)', fontSize: '13px', marginTop: '24px' }}>
           유사한 상품을 찾지 못했습니다. 상품 사진에 가까운 이미지로 다시 시도해 주세요.
+        </p>
+      )}
+
+      {results && results.length > 0 && results[0].similarity < SIMILARITY_CONFIDENT && (
+        <p style={{ color: 'var(--text-sub)', fontSize: '13px', marginTop: '24px' }}>
+          정확히 일치하는 상품은 없지만, 가장 비슷한 순으로 보여드려요.
         </p>
       )}
 
