@@ -24,8 +24,10 @@ export default function () {
   const payload = JSON.stringify({
     buyerEmail: `k6-vu${__VU}@example.com`,
     buyerName: `k6 tester ${__VU}`,
-    buyerPhone: '010-0000-0000',
-    buyerAddress: '테스트 주소',
+    // 구조화 주소(이슈 #52)·전화번호 정규화(이슈 #53) 도입 이후 형식에 맞춰 갱신.
+    buyerPhone: '010-1234-5678',
+    postalCode: '06236',
+    baseAddress: '서울시 강남구 테헤란로 123',
     items: [{ productOptionId: PRODUCT_OPTION_ID, quantity: 1 }],
   });
 
