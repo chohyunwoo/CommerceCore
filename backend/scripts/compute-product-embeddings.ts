@@ -41,11 +41,22 @@ async function main() {
         tolist: () => number[][] | number[][][];
       };
       const data = feat.tolist();
-      // DINOv2 출력([1, seq, hidden])에서 CLS 토큰(index 0)을 전역 descriptor로 사용.
-      const embedding =
-        feat.dims.length === 3
-          ? (data as number[][][])[0][0]
-          : (data as number[][])[0];
+      // DINOv2 출력([1, seq, hidden])에서 CLS 토큰(index 0)을 제외한 패치 토큰들을
+      // 평균(mean-pooling)해 전역 descriptor로 사용. 프론트(imageEmbedding.ts)의
+      // extractMeanVector와 반드시 동일해야 쿼리·카탈로그가 같은 벡터 공간에 놓인다.
+      let embedding: number[];
+      if (feat.dims.length !== 3) {
+        embedding = (data as number[][])[0];
+      } else {
+        const tokens = (data as number[][][])[0];
+        const patches = tokens.slice(1);
+        const hidden = patches[0].length;
+        embedding = new Array<number>(hidden).fill(0);
+        for (const p of patches) {
+          for (let i = 0; i < hidden; i++) embedding[i] += p[i];
+        }
+        for (let i = 0; i < hidden; i++) embedding[i] /= patches.length;
+      }
 
       product.imageEmbedding = embedding;
       await productRepository.save(product);

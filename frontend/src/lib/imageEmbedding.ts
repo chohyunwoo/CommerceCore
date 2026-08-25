@@ -27,15 +27,27 @@ function loadExtractor() {
   return extractorPromise;
 }
 
-// DINOv2 출력([1, seq, hidden])에서 전역 descriptor인 CLS 토큰(index 0)을 꺼낸다.
-function extractClsVector(feat: {
+// DINOv2 출력([1, seq, hidden])에서 CLS 토큰(index 0)을 제외한 패치 토큰들을
+// 평균(mean-pooling)해 전역 descriptor로 쓴다. 스파이크 실측(프로덕션 카탈로그 50개)에서
+// CLS 토큰보다 이미지 리트리벌 품질이 더 좋았음 — 특히 같은 카테고리 내 세부 유사도.
+// ⚠️ 카탈로그 임베딩(compute-product-embeddings.ts)도 반드시 같은 mean-pooling이어야
+// 쿼리·카탈로그가 같은 벡터 공간에 놓여 코사인 유사도가 의미를 가진다.
+function extractMeanVector(feat: {
   dims: number[];
   tolist: () => number[][] | number[][][];
 }): number[] {
   const data = feat.tolist();
-  return feat.dims.length === 3
-    ? (data as number[][][])[0][0]
-    : (data as number[][])[0];
+  // [1, seq, hidden] 기대. 혹시 [1, hidden] 형태면 그대로 사용(mean-pool 불가).
+  if (feat.dims.length !== 3) return (data as number[][])[0];
+  const tokens = (data as number[][][])[0];
+  const patches = tokens.slice(1); // CLS 제외
+  const hidden = patches[0].length;
+  const pooled = new Array<number>(hidden).fill(0);
+  for (const p of patches) {
+    for (let i = 0; i < hidden; i++) pooled[i] += p[i];
+  }
+  for (let i = 0; i < hidden; i++) pooled[i] /= patches.length;
+  return pooled;
 }
 
 /** 유휴 시간에 모델을 미리 받아 브라우저 캐시에 태워둔다 (첫 검색 시 지연 완화). */
@@ -59,5 +71,5 @@ export async function getImageEmbedding(file: File): Promise<number[]> {
   ]);
   const image = await RawImage.fromBlob(file);
   const feat = await extractor(image);
-  return extractClsVector(feat);
+  return extractMeanVector(feat);
 }
