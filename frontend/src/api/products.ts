@@ -34,8 +34,10 @@ export function fetchProduct(id: number): Promise<ProductDetail> {
 
 export function searchProductsByImage(
   embedding: number[],
+  category?: string,
 ): Promise<ProductSearchResult[]> {
   return apiPost<ProductSearchResult[]>('/products/search-by-image', {
     embedding,
+    ...(category ? { category } : {}),
   });
 }

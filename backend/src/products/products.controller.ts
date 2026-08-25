@@ -50,6 +50,6 @@ export class ProductsController {
   @Post('search-by-image')
   @HttpCode(200)
   searchByImage(@Body() dto: SearchByImageDto) {
-    return this.productsService.searchByImage(dto.embedding);
+    return this.productsService.searchByImage(dto.embedding, dto.category);
   }
 }

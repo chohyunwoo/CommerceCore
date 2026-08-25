@@ -46,6 +46,29 @@ describe('ProductsService.searchByImage', () => {
     expect(results[0].similarity).toBeCloseTo(0.316, 2);
   });
 
+  it('카테고리를 지정하면 해당 카테고리로 필터링해 조회한다', async () => {
+    const find = jest.fn().mockResolvedValue([]);
+    const service = new ProductsService({ find } as never);
+
+    await service.searchByImage([1, 0], '신발');
+
+    expect(find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ category: { name: '신발' } }),
+      }),
+    );
+  });
+
+  it('카테고리를 생략하면 카테고리 필터 없이 전체에서 조회한다', async () => {
+    const find = jest.fn().mockResolvedValue([]);
+    const service = new ProductsService({ find } as never);
+
+    await service.searchByImage([1, 0]);
+
+    const arg = find.mock.calls[0][0] as { where: Record<string, unknown> };
+    expect(arg.where).not.toHaveProperty('category');
+  });
+
   it('does not leak the raw embedding array in the response shape', async () => {
     const service = createService([
       { id: 1, name: 'A', imageEmbedding: [1, 0] },
