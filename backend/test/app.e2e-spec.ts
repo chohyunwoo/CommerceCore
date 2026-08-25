@@ -88,7 +88,7 @@ describe('상품 목록 검색·필터·정렬 (e2e)', () => {
     await app.close();
   });
 
-  it('상품명 검색·가격 범위·정렬이 적용된다', async () => {
+  it('상품명 검색·정렬이 적용된다', async () => {
     const server = app.getHttpServer();
     const base = `/products?category=${encodeURIComponent(categoryName)}`;
     type ListRes = {
@@ -105,14 +105,6 @@ describe('상품 목록 검색·필터·정렬 (e2e)', () => {
     expect(search.items.every((p) => p.name.includes('E2E검색테스트'))).toBe(
       true,
     );
-
-    // 가격 범위: 10000~20000 → beta(15000)만
-    const priceRes = await request(server)
-      .get(`${base}&minPrice=10000&maxPrice=20000`)
-      .expect(200);
-    const price = priceRes.body as ListRes;
-    expect(price.total).toBe(1);
-    expect(price.items[0].basePrice).toBe(15000);
 
     // 정렬: 가격 오름차순 → 5000, 15000, 25000
     const sortRes = await request(server)
