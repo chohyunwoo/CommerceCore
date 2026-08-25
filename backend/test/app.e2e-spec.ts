@@ -1042,7 +1042,7 @@ describe('주문-계정 연결 + 마이페이지 (e2e)', () => {
     await app.close();
   });
 
-  it('로그인 상태로 주문하면 마이페이지 목록/상세에 나타나고, 다른 사용자는 404를 받는다', async () => {
+  it('결제 미완료(PENDING)는 마이페이지에 숨기고, 결제 완료 후 목록/상세에 나타나며, 다른 사용자는 404를 받는다', async () => {
     const server = app.getHttpServer();
 
     const registerARes = await request(server)
@@ -1065,6 +1065,23 @@ describe('주문-계정 연결 + 마이페이지 (e2e)', () => {
       })
       .expect(201);
     const { orderNumber } = createRes.body as CreateOrderResponse;
+
+    // 결제 전(PENDING)에는 마이페이지 목록/상세에 노출되지 않는다(결정 44).
+    const pendingListRes = await request(server)
+      .get('/orders/my')
+      .set('X-Session-Token', tokenA)
+      .expect(200);
+    expect((pendingListRes.body as PaginatedMyOrders).items).toHaveLength(0);
+    await request(server)
+      .get(`/orders/my/${orderNumber}`)
+      .set('X-Session-Token', tokenA)
+      .expect(404);
+
+    // 결제 완료로 전이하면(여기선 DB 직접 갱신으로 시뮬레이션) 노출된다.
+    await dataSource.query(
+      `UPDATE orders SET status = 'PAID' WHERE order_number = $1`,
+      [orderNumber],
+    );
 
     const myOrdersRes = await request(server)
       .get('/orders/my')
@@ -1101,6 +1118,66 @@ describe('주문-계정 연결 + 마이페이지 (e2e)', () => {
     await request(server)
       .get(`/orders/my/${orderNumber}`)
       .set('X-Session-Token', tokenB)
+      .expect(404);
+  });
+
+  it('방치된 PENDING 주문은 다음 주문 시점에 재고가 회수되고 EXPIRED로 전이·숨겨진다(결정 45)', async () => {
+    const server = app.getHttpServer();
+
+    // 재고 1개로 좁혀 "회수가 실제로 일어났는가"를 결정적으로 검증한다.
+    await dataSource.query(
+      `UPDATE product_options SET stock = 1 WHERE id = $1`,
+      [productOptionId],
+    );
+
+    const orderPayload = {
+      buyerName: '구매자A',
+      buyerPhone: '010-1234-5678',
+      postalCode: '06236',
+      baseAddress: '서울시 강남구 테헤란로 123',
+      items: [{ productOptionId, quantity: 1 }],
+    };
+
+    // 주문 A: 재고 1 → 0, PENDING.
+    const createA = await request(server)
+      .post('/orders')
+      .set('X-Cart-Id', 'e2e-reclaim-a')
+      .send({ ...orderPayload, buyerEmail: emailA })
+      .expect(201);
+    const orderA = (createA.body as CreateOrderResponse).orderNumber;
+
+    // A를 TTL을 넘긴 것으로 만든다(1시간 전 생성).
+    await dataSource.query(
+      `UPDATE orders SET created_at = now() - interval '1 hour' WHERE order_number = $1`,
+      [orderA],
+    );
+
+    // 주문 B: 재고가 0이지만, 생성 직전 만료 회수로 A의 재고가 반납돼 성공해야 한다.
+    // (회수가 없다면 STOCK_INSUFFICIENT로 실패했을 것 → B의 성공이 회수의 증거)
+    const createB = await request(server)
+      .post('/orders')
+      .set('X-Cart-Id', 'e2e-reclaim-b')
+      .send({ ...orderPayload, buyerEmail: emailA })
+      .expect(201);
+    const orderB = (createB.body as CreateOrderResponse).orderNumber;
+    expect(orderB).not.toBe(orderA);
+
+    // A는 EXPIRED로 전이됐고, 재고는 (A 반납 +1, B 차감 -1) = 0.
+    const [expiredA] = await dataSource.query<{ status: string }[]>(
+      `SELECT status FROM orders WHERE order_number = $1`,
+      [orderA],
+    );
+    expect(expiredA.status).toBe('EXPIRED');
+
+    const [opt] = await dataSource.query<{ stock: number }[]>(
+      `SELECT stock FROM product_options WHERE id = $1`,
+      [productOptionId],
+    );
+    expect(Number(opt.stock)).toBe(0);
+
+    // 만료된 A는 게스트 조회에서도 숨겨진다(404).
+    await request(server)
+      .get(`/orders/lookup?orderNumber=${orderA}&email=${emailA}`)
       .expect(404);
   });
 });

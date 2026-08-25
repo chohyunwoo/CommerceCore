@@ -22,5 +22,7 @@ import { AuthModule } from '../auth/auth.module';
   ],
   controllers: [OrdersController],
   providers: [OrdersService],
+  // AdminModule이 재고 복원(취소 시)·만료 회수에 재사용한다(결정 45).
+  exports: [OrdersService],
 })
 export class OrdersModule {}

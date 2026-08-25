@@ -11,6 +11,7 @@ import { AdminService } from './admin.service';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { AdminSseGuard } from '../common/guards/admin-sse.guard';
 import { PaymentsModule } from '../payments/payments.module';
+import { OrdersModule } from '../orders/orders.module';
 import { SupabaseStorageService } from './supabase-storage.service';
 
 @Module({
@@ -24,6 +25,8 @@ import { SupabaseStorageService } from './supabase-storage.service';
       User,
     ]),
     PaymentsModule,
+    // 주문 취소 시 재고 복원 + 만료 회수 로직을 OrdersService에서 재사용(결정 45).
+    OrdersModule,
   ],
   controllers: [AdminController],
   providers: [AdminService, AdminGuard, AdminSseGuard, SupabaseStorageService],

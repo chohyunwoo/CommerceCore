@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, ILike, In, Repository } from 'typeorm';
+import { DataSource, ILike, In, Not, Repository } from 'typeorm';
 import type { Redis } from 'ioredis';
 import { REDIS_CLIENT } from '../redis/redis.constants';
 import { adminSseTicketKey } from '../common/session/admin-sse-ticket.util';
@@ -9,11 +9,16 @@ import { ProductOption } from '../products/entities/product-option.entity';
 import { Product } from '../products/entities/product.entity';
 import { Category } from '../products/entities/category.entity';
 import { Order } from '../orders/entities/order.entity';
-import { OrderStatus } from '../orders/entities/order-status.enum';
+import {
+  HIDDEN_ORDER_STATUSES,
+  OrderStatus,
+} from '../orders/entities/order-status.enum';
+import { OrdersService } from '../orders/orders.service';
 import { Carrier } from '../orders/entities/carrier.enum';
 import { DeliveryEvent } from '../orders/entities/delivery-event.entity';
 import { DELIVERY_STAGE_ORDER } from '../orders/entities/delivery-stage.enum';
 import { DomainEventsService } from '../common/events/domain-events.service';
+import type { StockUpdateEvent } from '../common/events/domain-events.types';
 import { PaymentsService } from '../payments/payments.service';
 import {
   AdminProductOptionItem,
@@ -53,11 +58,18 @@ function escapeLike(value: string): string {
 // SHIPPED → DELIVERED는 이 메서드로 직접 전이하지 않는다 — 배송 단계 타임라인의
 // 마지막 이벤트(DELIVERED)가 기록될 때 addDeliveryEvent()가 자동으로 전이시킨다.
 const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  [OrderStatus.PENDING]: [OrderStatus.PAID, OrderStatus.CANCELLED],
+  // EXPIRED는 관리자 API가 아니라 만료 회수 루틴이 직접 전이시킨다(결정 45) — 모델
+  // 일관성을 위해 PENDING의 유효 다음 상태로 포함해 둔다.
+  [OrderStatus.PENDING]: [
+    OrderStatus.PAID,
+    OrderStatus.CANCELLED,
+    OrderStatus.EXPIRED,
+  ],
   [OrderStatus.PAID]: [OrderStatus.SHIPPED, OrderStatus.CANCELLED],
   [OrderStatus.SHIPPED]: [],
   [OrderStatus.DELIVERED]: [],
   [OrderStatus.CANCELLED]: [],
+  [OrderStatus.EXPIRED]: [],
 };
 
 @Injectable()
@@ -79,6 +91,7 @@ export class AdminService {
     private readonly redis: Redis,
     private readonly domainEvents: DomainEventsService,
     private readonly paymentsService: PaymentsService,
+    private readonly ordersService: OrdersService,
   ) {}
 
   /**
@@ -168,6 +181,10 @@ export class AdminService {
   }
 
   async getStockOverview(): Promise<StockOverviewItem[]> {
+    // 관리자가 재고를 볼 때 방치된 PENDING을 만료 회수해 현황이 최신 재고를 반영하게
+    // 한다(결정 45 — Render 무료 티어 슬립으로 cron을 두지 않는 대신의 lazy 회수).
+    await this.ordersService.reclaimExpiredPendingOrders();
+
     // 소프트 삭제된 상품의 옵션은 재고 현황에서 제외한다(이슈 #88).
     const options = await this.productOptionRepository.find({
       relations: { product: { category: true } },
@@ -274,7 +291,7 @@ export class AdminService {
       { status: string; count: string }[]
     >(
       `SELECT status::text AS status, COUNT(*) AS count
-       FROM orders GROUP BY status ORDER BY status`,
+       FROM orders WHERE status NOT IN ('PENDING', 'EXPIRED') GROUP BY status ORDER BY status`,
     );
 
     return {
@@ -602,51 +619,64 @@ export class AdminService {
     trackingNumber?: string,
     carrier?: Carrier,
   ): Promise<RecentOrderItem> {
-    const order = await this.dataSource.transaction(async (manager) => {
-      const order = await manager.findOne(Order, {
-        where: { orderNumber },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!order) {
-        throw new AppException(
-          AppErrors.ORDER_NOT_FOUND,
-          `주문(${orderNumber})을 찾을 수 없습니다.`,
-        );
-      }
-
-      const allowed = VALID_TRANSITIONS[order.status];
-      if (!allowed.includes(newStatus)) {
-        throw new AppException(
-          AppErrors.ORDER_STATUS_TRANSITION_INVALID,
-          `${order.status} → ${newStatus} 전이는 허용되지 않습니다.`,
-        );
-      }
-
-      if (
-        newStatus === OrderStatus.CANCELLED &&
-        order.status === OrderStatus.PAID
-      ) {
-        if (!order.paymentKey) {
+    const { order, restockEvents } = await this.dataSource.transaction(
+      async (manager) => {
+        const order = await manager.findOne(Order, {
+          where: { orderNumber },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!order) {
           throw new AppException(
-            AppErrors.PAYMENT_CANCEL_FAILED,
-            '결제 키 정보가 없어 자동으로 취소할 수 없습니다. TossPayments 콘솔에서 수동으로 확인해주세요.',
+            AppErrors.ORDER_NOT_FOUND,
+            `주문(${orderNumber})을 찾을 수 없습니다.`,
           );
         }
-        await this.paymentsService.cancel(order.paymentKey, CANCEL_REASON);
-      }
 
-      if (newStatus === OrderStatus.SHIPPED) {
-        order.trackingNumber = trackingNumber ?? null;
-        order.carrier = carrier ?? null;
-      }
+        const allowed = VALID_TRANSITIONS[order.status];
+        if (!allowed.includes(newStatus)) {
+          throw new AppException(
+            AppErrors.ORDER_STATUS_TRANSITION_INVALID,
+            `${order.status} → ${newStatus} 전이는 허용되지 않습니다.`,
+          );
+        }
 
-      order.status = newStatus;
-      return manager.save(order);
-    });
+        let restockEvents: StockUpdateEvent[] = [];
+        if (newStatus === OrderStatus.CANCELLED) {
+          if (order.status === OrderStatus.PAID) {
+            if (!order.paymentKey) {
+              throw new AppException(
+                AppErrors.PAYMENT_CANCEL_FAILED,
+                '결제 키 정보가 없어 자동으로 취소할 수 없습니다. TossPayments 콘솔에서 수동으로 확인해주세요.',
+              );
+            }
+            await this.paymentsService.cancel(order.paymentKey, CANCEL_REASON);
+          }
+          // 주문 생성 시 차감했던 재고를 취소 시 반납한다(결정 45 — 기존엔 누락돼 유령
+          // 재고가 발생했음). 만료 회수와 동일한 공용 루틴을 트랜잭션 안에서 재사용한다.
+          restockEvents = await this.ordersService.restoreOrderStock(
+            manager,
+            order.id,
+          );
+        }
+
+        if (newStatus === OrderStatus.SHIPPED) {
+          order.trackingNumber = trackingNumber ?? null;
+          order.carrier = carrier ?? null;
+        }
+
+        order.status = newStatus;
+        const saved = await manager.save(order);
+        return { order: saved, restockEvents };
+      },
+    );
 
     const updated = this.toRecentOrderItem(order, []);
 
     this.domainEvents.emitOrderUpdate(updated);
+    // 커밋된 재고 반납만 대시보드에 반영한다(롤백 시엔 발행되지 않음).
+    for (const event of restockEvents) {
+      this.domainEvents.emitStockUpdate(event);
+    }
     return updated;
   }
 
@@ -718,7 +748,16 @@ export class AdminService {
     search?: string,
   ): Promise<PaginatedRecentOrders> {
     const trimmedSearch = search?.trim();
-    const baseWhere = status ? { status } : {};
+    // 결제 미완료(PENDING)·만료본(EXPIRED)은 관리자 주문 목록에 노출하지 않는다(결정 44/45).
+    // 숨김 상태를 명시 요청하면 빈 결과, 그 외에는 숨김 상태를 제외한다.
+    const isHiddenStatus = status
+      ? (HIDDEN_ORDER_STATUSES as readonly OrderStatus[]).includes(status)
+      : false;
+    const baseWhere = isHiddenStatus
+      ? { status: In([] as OrderStatus[]) }
+      : status
+        ? { status }
+        : { status: Not(In([...HIDDEN_ORDER_STATUSES])) };
     // 이름/이메일 중 하나만 일치해도 찾을 수 있어야 하므로 OR — TypeORM에서는
     // where에 배열을 넘기면 각 원소가 OR로 묶인다(각 원소 내부는 AND).
     const where = trimmedSearch
@@ -726,9 +765,7 @@ export class AdminService {
           { ...baseWhere, buyerName: ILike(`%${trimmedSearch}%`) },
           { ...baseWhere, buyerEmail: ILike(`%${trimmedSearch}%`) },
         ]
-      : status
-        ? baseWhere
-        : undefined;
+      : baseWhere;
 
     const [orders, total] = await this.orderRepository.findAndCount({
       where,

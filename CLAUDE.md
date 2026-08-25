@@ -208,9 +208,9 @@ NCP VM 대신 무료 배포 조합(Render + Supabase + Upstash + Cloudflare Page
 |---|---|---|
 | POST | `/orders/validate-stock` | 주문 전 재고 확인. 응답: `{ valid: boolean, insufficientItems?: [...] }` (항상 200) |
 | POST | `/orders` | 실제 주문 생성. Request: `{ buyerEmail, buyerName, buyerPhone, buyerAddress, items: [{ productOptionId, quantity }] }`. Response 201: `{ orderNumber, status, totalAmount }`. `X-Session-Token`이 유효하면 `order.userId`를 자동 기록(결정 37). 재검증 실패 시 409 |
-| GET | `/orders/lookup?orderNumber=&email=` | 주문번호+이메일 조합 조회(게스트). 응답에 `trackingNumber`/`carrier`/`deliveryEvents`(배송 단계 타임라인) 포함(결정 33). 불일치 시 404 |
-| GET | `/orders/my?page=&limit=` | 로그인 필요. 내 주문 목록. 응답: `{ items, total, page, totalPages }`(`GET /products`와 동일 컨벤션, 결정 37) |
-| GET | `/orders/my/:orderNumber` | 로그인 필요. 내 주문 상세(품목, 배송 타임라인). 다른 사용자의 주문이면 404(존재 여부 비노출, 결정 37) |
+| GET | `/orders/lookup?orderNumber=&email=` | 주문번호+이메일 조합 조회(게스트). 응답에 `trackingNumber`/`carrier`/`deliveryEvents`(배송 단계 타임라인) 포함(결정 33). 불일치 또는 결제 미완료(PENDING)면 404(결정 44) |
+| GET | `/orders/my?page=&limit=` | 로그인 필요. 내 주문 목록. 결제 미완료(PENDING)는 제외(결정 44). 응답: `{ items, total, page, totalPages }`(`GET /products`와 동일 컨벤션, 결정 37) |
+| GET | `/orders/my/:orderNumber` | 로그인 필요. 내 주문 상세(품목, 배송 타임라인). 다른 사용자의 주문이거나 PENDING이면 404(존재 여부 비노출, 결정 37/44) |
 
 ### 결제 (Payments)
 
@@ -232,8 +232,8 @@ NCP VM 대신 무료 배포 조합(Render + Supabase + Upstash + Cloudflare Page
 | Method | Path | 설명 |
 |---|---|---|
 | GET | `/admin/stock-overview` | 전체 상품 옵션의 현재 재고 목록. 카테고리 순으로 정렬되어 반환(결정 34), `categoryName` 포함 |
-| GET | `/admin/orders/recent?status=&page=&limit=&search=` | 주문 목록. `status`(선택)로 필터링, `search`(선택)로 `buyerName`/`buyerEmail` 부분 일치 검색(결정 38), `page`/`limit`(기본 1/20)로 페이지네이션. 응답: `{ items, total, page, totalPages }`(`GET /products`와 동일 컨벤션, 결정 34) |
-| PATCH | `/admin/orders/:id/status` | 주문 상태 전이. body: `{ status }`. 유효하지 않은 전이 시 400. PAID→CANCELLED는 TossPayments 결제취소 API 호출 후 성공해야 전이됨(결정 26) — 실패 시 400 `PAYMENT_CANCEL_FAILED`, 상태 변경 없음. PAID→SHIPPED는 `trackingNumber`/`carrier`가 body에 필수(결정 33). **SHIPPED→DELIVERED는 이 API로 직접 전이 불가** — 아래 `delivery-events`로만 진행됨 |
+| GET | `/admin/orders/recent?status=&page=&limit=&search=` | 주문 목록. **결제 미완료(PENDING)는 제외**(결정 44 — '전체'도 PENDING 미포함). `status`(선택)로 필터링, `search`(선택)로 `buyerName`/`buyerEmail` 부분 일치 검색(결정 38), `page`/`limit`(기본 1/20)로 페이지네이션. 응답: `{ items, total, page, totalPages }`(`GET /products`와 동일 컨벤션, 결정 34) |
+| PATCH | `/admin/orders/:id/status` | 주문 상태 전이. body: `{ status }`. 유효하지 않은 전이 시 400. PAID→CANCELLED는 TossPayments 결제취소 API 호출 후 성공해야 전이됨(결정 26) — 실패 시 400 `PAYMENT_CANCEL_FAILED`, 상태 변경 없음. **CANCELLED 전이 시 주문 품목 재고를 반납**(결정 45). PAID→SHIPPED는 `trackingNumber`/`carrier`가 body에 필수(결정 33). **SHIPPED→DELIVERED는 이 API로 직접 전이 불가** — 아래 `delivery-events`로만 진행됨 |
 | POST | `/admin/orders/:id/delivery-events` | 배송 단계 기록(결정 33). body: `{ stage, location? }`. `stage`는 `COLLECTED`→`IN_TRANSIT`→`OUT_FOR_DELIVERY`→`DELIVERED` 순서로만 기록 가능(건너뛰거나 중복 시 400). SHIPPED 상태의 주문에만 가능(그 외 400). `DELIVERED` 기록 시 주문 status도 자동으로 DELIVERED 전이 |
 | POST | `/admin/events/ticket` | SSE 연결용 1회용 단기 티켓 발급(TTL 30초, Redis). 응답: `{ ticket }`. `EventSource`가 커스텀 헤더를 못 보내 세션 토큰 대신 이 티켓을 아래 `/admin/events`에 쿼리로 전달한다(결정 38) |
 | GET | `/admin/events?ticket=` | SSE. `stock-update`/`order-update` 이벤트를 이름으로 구분해 하나의 연결로 푸시. `order-update`에는 배송 단계 변경도 포함됨(결정 33). `ticket`은 검증 즉시 소모되어 1회만 사용 가능(결정 38) — `AdminGuard`가 아닌 `AdminSseGuard`로 별도 보호 |
@@ -569,6 +569,38 @@ CREATE TABLE order_items (
 - **재검토 트리거**: 비활성 상품 복구(재활성화)·완전 삭제가 필요해지면 → 관리 화면에 복구/영구삭제 추가 검토.
 - **2026-08-24 UX 조정(이슈 #90)**: 재입고를 '상품 관리'에서 '재고 관리'로 이동(재고를 확인하는 화면에서 바로 처리 — 역할 분리: 재고관리=조회+재입고, 상품관리=등록/삭제/옵션). 재고 화면 재입고를 위해 `stock-overview`/`StockUpdateEvent`에 `productId` 추가. 상품 관리 신규 등록 폼은 목록 아래 스크롤 대신 서브탭(목록/신규 등록)으로 분리(회원·구매자 화면과 동일 패턴). 후속(이슈 #90에 이어 별도 처리).
 - **2026-08-24 후속 완료(이슈 #92)**: ①이미지 업로드에 `cacheControl='31536000'`(1년) 지정 — URL이 불변(타임스탬프+uuid)이라 장기 캐시 안전, 브라우저 재다운로드/트래픽 감소. ②**SKU 유니크 대안 B** — 전역 `UNIQUE(sku)`를 활성 옵션에만 적용하는 부분 유니크 인덱스(`CREATE UNIQUE INDEX ... ON product_options(sku) WHERE is_active`)로 전환해 소프트 삭제된 상품의 SKU 재사용 허용. 부분 인덱스가 `product_options` 컬럼만 참조 가능해 `product_options.is_active` 추가, `softDeleteProduct`가 상품+옵션을 함께 비활성화(트랜잭션), SKU 중복 검사도 활성 옵션만 대상으로 변경.
+
+### 44. 결제 미완료(PENDING) 주문 → 사용자·관리자 뷰에서 숨김, DB 상태는 유지
+
+- **배경**: 사용자가 결제창까지 갔다가 이탈하면 주문이 `PENDING`으로 남는데(주문 생성 시점에 이미 재고를 차감하고 PENDING 저장, 결정 2), 이게 두 곳에서 그대로 노출되고 있었음. (1) 마이페이지(`/orders/my`)·게스트 조회(`/orders/lookup`)가 상태로 거르지 않아 "결제 대기" 주문이 사용자에게 표시됨 — 완료하지 않은 시도를 "주문"처럼 보여주는 건 혼란만 줌. (2) 관리자 대시보드 최근 주문에 "결제 대기" 탭이 있었지만, 자동 PG 흐름에서 관리자가 PENDING에 취할 실질 액션이 없음(배송 불가, 결제 대행 불가) — fulfillment 큐로선 무의미.
+- **비교한 대안**:
+  - (a) 상태 자체를 enum에서 제거 / payment-first(결제 확정 시에만 주문 생성) — 완전히 깔끔하지만, TossPayments 흐름이 confirm 이전에 `orderId`+`amount`를 검증할 레코드를 요구하고, 무엇보다 프로젝트의 지향인 **Ledger·정산(reconciliation)** 이 "결제 시작했으나 미정산(=PENDING)" 건을 훑어 PG 기록과 대조하는 훅을 필요로 함. 지우면 confirm 콜백 실패(사용자는 Toss에서 결제됐는데 우리 confirm이 네트워크로 실패)를 복구할 대상이 사라짐. → 큰 리팩터라 보류.
+  - (b) **상태는 도메인·DB에 유지하되, 사용자·관리자 처리 뷰에서만 숨김** (선택).
+- **선택 근거**: (b). "미결제 시도는 사용자에게도 관리자에게도 주문으로 보이지 않는다"는 원칙을 표현 계층에서 구현하면서, reconciliation이 잡을 상태값은 그대로 남긴다. 표시를 없애는 것과 상태를 삭제하는 것은 다르다.
+- **구현**:
+  - `OrdersService.lookupOrder`·`getMyOrders`·`getMyOrderDetail`에 `status: Not(PENDING)` 추가 — PENDING이면 목록에서 빠지고 상세는 404(존재 여부 비노출, 결정 6과 같은 기준).
+  - `AdminService.getRecentOrders`: status 미지정 시 `Not(PENDING)`, status=PENDING을 명시 요청해도 빈 결과. 프론트 `AdminOrdersPage`에서 "결제 대기" 탭 제거('전체'도 백엔드에서 PENDING 제외). 상태 전이 자체(PENDING→PAID/CANCELLED)는 유지 — 능력이 아니라 표시만 제거.
+  - `getStats`의 주문 상태 분포도 일관성을 위해 PENDING 제외(매출 지표는 원래 REVENUE_STATUSES만 집계).
+  - `POST /orders` 응답은 여전히 PENDING을 반환(결제 진행에 필요) — 숨김은 "조회 뷰"에 한정.
+- **테스트**: 유닛(getMyOrders/getMyOrderDetail의 `where`에 `Not(PENDING)` 반영, getRecentOrders의 status 미지정/검색 케이스에 PENDING 제외 검증 추가) + e2e를 "PENDING은 마이페이지에 안 보이고, PAID로 전이하면 목록/상세에 노출"로 재작성. 유닛 104개·e2e 16개 전부 통과 확인(2026-08-25).
+- **남은 문제 → 결정 45로 해소**: 이번 변경으로 PENDING이 화면에서 안 보이게 되면서 오히려 방치되기 쉬워진 "유령 재고"(이탈 PENDING이 재고를 계속 점유)는 결정 45(만료 회수 + 재고 복원)에서 처리함.
+- **재검토 트리거**: Ledger/정산 배치 도입 시점 → 결제 확정 시에만 주문을 생성하는 payment-first로 전환하면 PENDING이 표현 모델에서 완전히 사라짐(위 (a)).
+
+### 45. 유령 재고 해결 — 이탈 PENDING 만료 회수(재고 반납 + EXPIRED) + 취소 시 재고 복원
+
+- **배경**: 재고는 주문 생성 시 차감되는데(결정 2), 결제창까지 갔다가 이탈하면 주문이 PENDING으로 남아 **재고를 영구 점유**했다. 결정 44로 PENDING을 화면에서 숨기자 오히려 방치되기 쉬워짐. 게다가 코드 확인 중 **취소(PAID→CANCELLED)가 재고를 전혀 복원하지 않는 잠재 버그**도 발견 — 즉 "재고를 잡았지만 배송 없이 파이프라인을 빠져나가는 모든 경로(이탈 PENDING + 취소)"에서 재고가 새고 있었음.
+- **비교한 대안(트레이드오프 정리)**:
+  - **A. 생성 시 예약 유지 + 만료 회수 + 취소 복원 (선택)**: 결정 2를 유지하고 누수 지점만 막음. 오버셀 불가·결제 중 손님 보호(결정 13 동시성 서사 유지)라는 장점, 대신 이탈자가 TTL 동안 재고를 점유해 "가짜 품절"이 잠깐 생길 수 있음. 변경이 한정적·가산적이라 저리스크.
+  - B. payment-first(결제 확정 시 차감): PENDING이 재고를 안 잡아 문제 자체가 소멸하나, 결제창을 다 채운 손님이 막판에 거절될 수 있고(손님 보호 안 됨) 돈 경로를 재구조화하는 큰 리팩터. Ledger 단계에서 재검토(결정 44 트리거).
+- **선택 근거**: A. 저후회 증분 수정이고 B로 가는 길을 막지 않음. 한정 재고 패션몰에선 "결제 다 하고 품절"보다 "잠깐 가짜 품절"이 덜 나쁜 실패 모드. (사용자 확정, 2026-08-25)
+- **구현**:
+  - **공용 `OrdersService.restoreOrderStock(manager, orderId)`**: 호출자 트랜잭션 안에서 주문 품목 수량만큼 `product_options.stock`을 되돌리고(비관적 락은 relations 없이 — Postgres FOR UPDATE+JOIN 제약), 발행할 `stock-update` 이벤트를 반환(SSE는 커밋 후 호출자가 발행). **만료 회수와 주문 취소가 공유** → 취소 시 재고 미복원 버그도 동시 해결.
+  - **만료 회수 `reclaimExpiredPendingOrders(optionIds?)`**: 생성 후 `PENDING_ORDER_TTL_MS`(30분) 지난 PENDING을 주문 행 락 + `status===PENDING` 재확인 후 재고 반납하고 **EXPIRED**로 전이. confirm()도 같은 행을 락 잡고 PENDING을 확인하므로 회수와 승인은 직렬화(먼저 커밋한 쪽이 이김, TTL 30분이라 정상 결제가 거의 항상 먼저).
+  - **트리거 = Lazy(스케줄러 없음)**: ①`createOrder`가 사려는 옵션에 대해 회수 후 진행(재고가 필요한 순간 정확히 회수), ②관리자 `getStockOverview` 조회 시 전체 회수. **Render 무료 티어는 15분 슬립 중 cron이 못 돌아** `@nestjs/schedule`을 쓰지 않고 lazy로 선택(새 의존성 0). 다중 인스턴스로 확장 시 분산 락 필요 — 재검토 트리거.
+  - **EXPIRED 신규 상태**: 마이그레이션 `AddOrderStatusExpired`(`ALTER TYPE ... ADD VALUE IF NOT EXISTS`, 멱등적). 사용자·관리자 조회 뷰에서 숨김(`HIDDEN_ORDER_STATUSES = [PENDING, EXPIRED]`) — 결정 44의 필터를 이 상수로 확장. CANCELLED(결제 후 취소/환불)와 구분해 정산 지표를 깨끗하게 유지.
+  - 모듈: `OrdersModule`이 `OrdersService`를 export하고 `AdminModule`이 import(단방향 Admin→Orders, 순환 없음).
+- **테스트**: 유닛 — 취소 시 `restoreOrderStock` 호출 + `stock-update` 발행 검증, `getMyOrders`/`getRecentOrders` 숨김 집합에 EXPIRED 포함. e2e — **재고 1개**로 좁혀 "A 주문(PENDING)→1시간 전으로 노후화→B 주문 시 A가 EXPIRED로 회수돼 재고 반납되어 B가 성공, A는 게스트 조회 404"까지 검증(회수가 없으면 B가 STOCK_INSUFFICIENT로 실패 → B의 성공이 회수의 증거). 유닛 105개·e2e 17개 전부 통과(2026-08-25).
+- **재검토 트리거**: 다중 인스턴스 확장 시 → 회수에 Redis 분산 락(단일 인스턴스 스윕 보장). 가상계좌 등 결제 완료가 느린 수단 도입 시 → TTL을 결제수단별로 분리. Ledger/정산 착수 시 → payment-first(대안 B) 재검토.
 
 ### 테스트 데이터
 
