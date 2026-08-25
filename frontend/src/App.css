@@ -1139,8 +1139,7 @@
   gap: 8px;
 }
 
-.product-search-input,
-.product-price-input {
+.product-search-input {
   padding: 8px 12px;
   font: inherit;
   font-size: 13px;
@@ -1148,19 +1147,7 @@
   border-radius: 4px;
   background: var(--bg);
   color: var(--text);
-}
-
-.product-search-input {
   width: 200px;
-}
-
-.product-price-input {
-  width: 100px;
-}
-
-.product-price-sep {
-  color: var(--text-sub);
-  font-size: 13px;
 }
 
 .product-filter-btn {

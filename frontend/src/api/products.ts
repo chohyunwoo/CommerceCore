@@ -12,23 +12,18 @@ export interface FetchProductsParams {
   page?: number;
   limit?: number;
   search?: string;
-  minPrice?: number;
-  maxPrice?: number;
   sort?: ProductSort;
 }
 
 export function fetchProducts(
   params: FetchProductsParams = {},
 ): Promise<PaginatedProducts> {
-  const { category, page = 1, limit = 12, search, minPrice, maxPrice, sort } =
-    params;
+  const { category, page = 1, limit = 12, search, sort } = params;
   const qs = new URLSearchParams();
   if (category) qs.set('category', category);
   qs.set('page', String(page));
   qs.set('limit', String(limit));
   if (search) qs.set('search', search);
-  if (minPrice != null) qs.set('minPrice', String(minPrice));
-  if (maxPrice != null) qs.set('maxPrice', String(maxPrice));
   if (sort) qs.set('sort', sort);
   return apiGet<PaginatedProducts>(`/products?${qs}`);
 }
