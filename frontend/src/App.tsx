@@ -30,7 +30,6 @@ function AuthHeaderLinks() {
     <>
       <Link to="/my">마이페이지</Link>
       {user.role === 'admin' && <Link to="/admin">관리자</Link>}
-      <span className="header-username">{user.name}님</span>
       <button type="button" className="header-logout-btn" onClick={() => void logout()}>
         로그아웃
       </button>
