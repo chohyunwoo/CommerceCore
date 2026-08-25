@@ -87,7 +87,7 @@ export function ProductListPage() {
           className={selectedCategory === null ? 'active' : ''}
           onClick={() => handleCategoryChange(null)}
         >
-          All
+          전체
         </button>
         {CATEGORIES.map((name) => (
           <button

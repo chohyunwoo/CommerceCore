@@ -3,10 +3,55 @@
 }
 
 :root {
-  --text: #1e1e1e;
-  --text-sub: #757575;
-  --bg: #ffffff;
-  --border: #dfdfdf;
+  /* ---- Design System tokens (DESIGN.md / .omd/system) ---- */
+  /* color */
+  --ink: #1e1e1e;
+  --muted: #757575;
+  --canvas: #ffffff;
+  --hairline: #dfdfdf;
+  --image-surface: #f0f0f0;
+  --on-ink: #ffffff;
+  --error: #c0392b;
+  --danger: #dc2626;
+
+  /* radius — storefront is flat (0), admin dashboard is soft (4–10px) */
+  --radius-input: 4px;
+  --radius-control: 6px;
+  --radius-banner: 8px;
+  --radius-card: 10px;
+  --radius-badge: 2px;
+
+  /* spacing (4px base) */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 40px;
+  --space-section: 72px;
+
+  /* motion */
+  --motion-fast: 0.15s;
+  --motion-base: 0.2s;
+  --motion-image: 0.5s;
+  --ease-standard: cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  /* type */
+  --tracking-tight: -0.01em;
+  --tracking-label: 0.1em;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* focus ring (accessible keyboard focus) */
+  --focus-ring: 2px solid var(--ink);
+  --focus-ring-offset: 2px;
+
+  /* ---- Legacy aliases (existing rules reference these) ---- */
+  --text: var(--ink);
+  --text-sub: var(--muted);
+  --bg: var(--canvas);
+  --border: var(--hairline);
   --sans: 'Helvetica Neue', 'Noto Sans KR', Arial, sans-serif;
 }
 
@@ -50,4 +95,23 @@ input, button, select, textarea {
 .error {
   color: #c0392b;
   font-size: 13px;
+}
+
+/* Accessible keyboard focus — the design contract lists focus-visible as an
+   applicable state for every interactive component. Mouse/touch focus stays
+   quiet; keyboard focus gets a clear ink ring. */
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Honor the reduced-motion contract (DESIGN.md Foundations: reduced motion
+   Required). Collapse all transitions/animations to near-instant. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
