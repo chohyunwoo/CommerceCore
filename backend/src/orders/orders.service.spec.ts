@@ -1,5 +1,9 @@
+import { In, Not } from 'typeorm';
 import { OrdersService } from './orders.service';
-import { OrderStatus } from './entities/order-status.enum';
+import {
+  HIDDEN_ORDER_STATUSES,
+  OrderStatus,
+} from './entities/order-status.enum';
 import { Order } from './entities/order.entity';
 import { ProductOption } from '../products/entities/product-option.entity';
 import { Product } from '../products/entities/product.entity';
@@ -59,6 +63,8 @@ function createOrdersService(managerOptions: ManagerMockOptions = {}) {
     transaction: jest.fn((cb: (manager: unknown) => Promise<unknown>) =>
       cb(manager),
     ),
+    // reclaimExpiredPendingOrders()가 만료 후보를 조회할 때 사용 — 기본은 후보 없음(no-op).
+    query: jest.fn().mockResolvedValue([]),
   };
   const redis = { del: jest.fn().mockResolvedValue(1), get: jest.fn() };
   const domainEvents = {
@@ -214,7 +220,7 @@ describe('OrdersService.getMyOrders', () => {
       [
         {
           orderNumber: 'ORD-1',
-          status: OrderStatus.PENDING,
+          status: OrderStatus.PAID,
           totalAmount: 10000,
           createdAt: new Date('2026-08-20T00:00:00.000Z'),
           trackingNumber: null,
@@ -226,14 +232,17 @@ describe('OrdersService.getMyOrders', () => {
 
     const result = await service.getMyOrders(5, 1, 10);
 
+    // 결제 미완료(PENDING)·만료본(EXPIRED)은 목록에서 제외된다(결정 44/45).
     expect(orderRepository.findAndCount).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId: 5 } }),
+      expect.objectContaining({
+        where: { userId: 5, status: Not(In([...HIDDEN_ORDER_STATUSES])) },
+      }),
     );
     expect(result).toEqual({
       items: [
         {
           orderNumber: 'ORD-1',
-          status: OrderStatus.PENDING,
+          status: OrderStatus.PAID,
           totalAmount: 10000,
           createdAt: new Date('2026-08-20T00:00:00.000Z'),
           trackingNumber: null,
@@ -258,7 +267,11 @@ describe('OrdersService.getMyOrderDetail', () => {
     );
 
     expect(orderRepository.findOne).toHaveBeenCalledWith({
-      where: { orderNumber: 'ORD-1', userId: 5 },
+      where: {
+        orderNumber: 'ORD-1',
+        userId: 5,
+        status: Not(In([...HIDDEN_ORDER_STATUSES])),
+      },
     });
   });
 });

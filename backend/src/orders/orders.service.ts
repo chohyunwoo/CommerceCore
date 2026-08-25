@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Not, Repository } from 'typeorm';
 import type { Redis } from 'ioredis';
 import { REDIS_CLIENT } from '../redis/redis.constants';
 import { DomainEventsService } from '../common/events/domain-events.service';
@@ -9,7 +9,11 @@ import { Product } from '../products/entities/product.entity';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
 import { DeliveryEvent } from './entities/delivery-event.entity';
-import { OrderStatus } from './entities/order-status.enum';
+import {
+  HIDDEN_ORDER_STATUSES,
+  OrderStatus,
+} from './entities/order-status.enum';
+import type { StockUpdateEvent } from '../common/events/domain-events.types';
 import { generateOrderNumber } from './order-number.util';
 import { ValidateStockDto } from './dto/validate-stock.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -25,6 +29,10 @@ import {
 import { getSessionUserId } from '../common/session/session.util';
 import { AppErrors } from '../common/errors/app-errors';
 import { AppException } from '../common/errors/app-exception';
+
+// 결제창까지 갔다가 이탈해 PENDING으로 방치된 주문은 재고를 계속 점유한다(유령 재고).
+// 이 시간이 지난 PENDING은 만료 회수(재고 반납 + EXPIRED 전이)한다(결정 45).
+const PENDING_ORDER_TTL_MS = 30 * 60 * 1000; // 30분
 
 @Injectable()
 export class OrdersService {
@@ -98,6 +106,11 @@ export class OrdersService {
       dto.items.map((item) => [item.productOptionId, item.quantity]),
     );
     const optionIds = [...quantityByOptionId.keys()].sort((a, b) => a - b);
+
+    // 사려는 옵션을 점유한 만료 PENDING을 먼저 회수해 재고를 되돌린 뒤 주문을 시작한다
+    // (결정 45 — lazy 회수). Render 무료 티어 슬립 중엔 cron이 못 도므로, 재고가
+    // 실제로 필요한 이 시점에 회수하는 것이 가장 확실하다.
+    await this.reclaimExpiredPendingOrders(optionIds);
 
     const { order, options, productById } = await this.dataSource.transaction(
       async (manager) => {
@@ -209,6 +222,109 @@ export class OrdersService {
     };
   }
 
+  /**
+   * 방치된 PENDING 주문(생성 후 TTL 경과)을 만료 회수한다(결정 45). 주문 행을 락 잡고
+   * 여전히 PENDING이면 재고를 반납하고 EXPIRED로 전이한다. confirm()도 같은 주문 행을
+   * 락 잡고 status===PENDING을 확인하므로, 회수와 결제 승인은 직렬화된다(둘 중 먼저 커밋한
+   * 쪽이 이김 — TTL을 30분으로 넉넉히 둬 정상 결제가 거의 항상 먼저 도착한다).
+   * @param optionIds 주어지면 해당 옵션을 점유한 주문만 회수(주문 생성 경로), 없으면 전체.
+   */
+  async reclaimExpiredPendingOrders(optionIds?: number[]): Promise<void> {
+    const cutoff = new Date(Date.now() - PENDING_ORDER_TTL_MS);
+
+    const candidates: { id: string }[] =
+      optionIds && optionIds.length > 0
+        ? await this.dataSource.query(
+            `SELECT DISTINCT o.id FROM orders o
+             JOIN order_items oi ON oi.order_id = o.id
+             WHERE o.status = 'PENDING' AND o.created_at < $1
+               AND oi.product_option_id = ANY($2)`,
+            [cutoff, optionIds],
+          )
+        : await this.dataSource.query(
+            `SELECT id FROM orders WHERE status = 'PENDING' AND created_at < $1`,
+            [cutoff],
+          );
+
+    for (const { id } of candidates) {
+      const orderId = Number(id);
+      const events = await this.dataSource.transaction(async (manager) => {
+        const order = await manager.findOne(Order, {
+          where: { id: orderId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        // 락 대기 사이에 결제 승인/취소로 상태가 바뀌었거나 TTL 안쪽이면 건너뛴다.
+        if (
+          !order ||
+          order.status !== OrderStatus.PENDING ||
+          order.createdAt >= cutoff
+        ) {
+          return [];
+        }
+
+        const restored = await this.restoreOrderStock(manager, orderId);
+        order.status = OrderStatus.EXPIRED;
+        await manager.save(order);
+        return restored;
+      });
+
+      // 커밋된 재고 변경만 대시보드에 반영한다(롤백된 시도는 발행되지 않음).
+      for (const event of events) {
+        this.domainEvents.emitStockUpdate(event);
+      }
+    }
+  }
+
+  /**
+   * 주문의 품목 수량만큼 재고를 되돌린다. 호출자의 트랜잭션(manager) 안에서 실행되며,
+   * product_options 행을 비관적 락으로 잡아 갱신하고, 발행할 stock-update 이벤트를 반환한다
+   * (SSE 발행은 커밋 이후 호출자가 담당). 만료 회수와 주문 취소(PENDING/PAID→CANCELLED)가
+   * 공유한다(결정 45).
+   */
+  async restoreOrderStock(
+    manager: EntityManager,
+    orderId: number,
+  ): Promise<StockUpdateEvent[]> {
+    const items = await manager.find(OrderItem, {
+      where: { orderId },
+    });
+    if (items.length === 0) return [];
+
+    const quantityByOptionId = new Map<number, number>();
+    for (const item of items) {
+      quantityByOptionId.set(
+        item.productOptionId,
+        (quantityByOptionId.get(item.productOptionId) ?? 0) + item.quantity,
+      );
+    }
+
+    // 비관적 락은 relations(JOIN) 없이 잡는다 — Postgres는 FOR UPDATE를 JOIN의 nullable
+    // 쪽에 걸 수 없어서다. 상품명은 이벤트 조립용으로 별도 조회한다(createOrder와 동일 패턴).
+    const options = await manager.find(ProductOption, {
+      where: { id: In([...quantityByOptionId.keys()]) },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    for (const option of options) {
+      option.stock += quantityByOptionId.get(option.id) ?? 0;
+    }
+    await manager.save(options);
+
+    const products = await manager.find(Product, {
+      where: { id: In([...new Set(options.map((o) => o.productId))]) },
+    });
+    const productById = new Map(products.map((p) => [p.id, p]));
+
+    return options.map((option) => ({
+      productOptionId: option.id,
+      productId: option.productId,
+      productName: productById.get(option.productId)?.name ?? '',
+      size: option.size,
+      color: option.color,
+      stock: option.stock,
+    }));
+  }
+
   private async generateUniqueOrderNumber(
     manager: EntityManager,
   ): Promise<string> {
@@ -233,6 +349,9 @@ export class OrdersService {
       where: {
         orderNumber: query.orderNumber,
         buyerEmail: query.email,
+        // 결제 미완료(PENDING)·만료본(EXPIRED)은 사용자에게 주문으로 노출하지 않는다
+        // (결정 44/45). 상태는 DB에 남지만 조회 시에는 존재하지 않는 것처럼 404 처리한다.
+        status: Not(In([...HIDDEN_ORDER_STATUSES])),
       },
     });
 
@@ -249,7 +368,8 @@ export class OrdersService {
     limit = 10,
   ): Promise<PaginatedMyOrders> {
     const [orders, total] = await this.orderRepository.findAndCount({
-      where: { userId },
+      // 결제 미완료(PENDING)·만료본(EXPIRED)은 마이페이지 목록에서 제외한다(결정 44/45).
+      where: { userId, status: Not(In([...HIDDEN_ORDER_STATUSES])) },
       order: { createdAt: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -273,7 +393,12 @@ export class OrdersService {
     orderNumber: string,
   ): Promise<OrderLookupResponse> {
     const order = await this.orderRepository.findOne({
-      where: { orderNumber, userId },
+      // 결제 미완료(PENDING)·만료본(EXPIRED)은 상세에서도 존재 여부를 노출하지 않는다(결정 44/45).
+      where: {
+        orderNumber,
+        userId,
+        status: Not(In([...HIDDEN_ORDER_STATUSES])),
+      },
     });
 
     if (!order) {

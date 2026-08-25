@@ -1,4 +1,5 @@
-import { ILike } from 'typeorm';
+import { ILike, In, Not } from 'typeorm';
+import { HIDDEN_ORDER_STATUSES } from '../orders/entities/order-status.enum';
 import { AdminService } from './admin.service';
 import { Order } from '../orders/entities/order.entity';
 import { OrderStatus } from '../orders/entities/order-status.enum';
@@ -44,8 +45,12 @@ function createAdminService(
       cb(manager),
     ),
   };
-  const domainEvents = { emitOrderUpdate: jest.fn() };
+  const domainEvents = { emitOrderUpdate: jest.fn(), emitStockUpdate: jest.fn() };
   const paymentsService = { cancel: jest.fn().mockResolvedValue(undefined) };
+  const ordersService = {
+    restoreOrderStock: jest.fn().mockResolvedValue([]),
+    reclaimExpiredPendingOrders: jest.fn().mockResolvedValue(undefined),
+  };
   const productOptionRepository = { findOne: jest.fn() };
   const productRepository = { findOne: jest.fn(), findAndCount: jest.fn() };
   const categoryRepository = { find: jest.fn(), findOne: jest.fn() };
@@ -65,6 +70,7 @@ function createAdminService(
     redis as never,
     domainEvents as never,
     paymentsService as never,
+    ordersService as never,
   );
 
   return {
@@ -73,6 +79,7 @@ function createAdminService(
     manager,
     domainEvents,
     paymentsService,
+    ordersService,
     productOptionRepository,
     categoryRepository,
     deliveryEventRepository,
@@ -158,6 +165,36 @@ describe('AdminService.updateOrderStatus', () => {
     );
     expect(result.status).toBe(OrderStatus.CANCELLED);
     expect(orderRecord?.status).toBe(OrderStatus.CANCELLED);
+  });
+
+  it('취소 시 재고를 반납한다(결정 45) — 커밋된 반납만 stock-update로 발행', async () => {
+    const { service, ordersService, domainEvents } = createAdminService({
+      orderNumber: 'ORD-1',
+      id: 7,
+      status: OrderStatus.PAID,
+      paymentKey: 'pay_1',
+      buyerName: '홍길동',
+      totalAmount: 10000,
+      createdAt: new Date('2026-08-18T00:00:00.000Z'),
+    });
+    ordersService.restoreOrderStock.mockResolvedValue([
+      {
+        productOptionId: 10,
+        productId: 1,
+        productName: '베이직 반팔티',
+        size: 'M',
+        color: '블랙',
+        stock: 5,
+      },
+    ]);
+
+    await service.updateOrderStatus('ORD-1', OrderStatus.CANCELLED);
+
+    expect(ordersService.restoreOrderStock).toHaveBeenCalledWith(
+      expect.anything(),
+      7,
+    );
+    expect(domainEvents.emitStockUpdate).toHaveBeenCalledTimes(1);
   });
 
   it('Toss 취소가 실패하면 주문 상태를 변경하지 않는다', async () => {
@@ -441,7 +478,19 @@ describe('AdminService.getRecentOrders', () => {
     );
   });
 
-  it('search가 있으면 buyerName/buyerEmail을 OR로 검색한다', async () => {
+  it('status 없이 호출하면 숨김 상태(PENDING·EXPIRED)를 제외하고 조회한다(결정 44/45)', async () => {
+    const { service, orderRepository } = createAdminService(null);
+
+    await service.getRecentOrders(undefined, 1, 20);
+
+    expect(orderRepository.findAndCount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { status: Not(In([...HIDDEN_ORDER_STATUSES])) },
+      }),
+    );
+  });
+
+  it('search가 있으면 buyerName/buyerEmail을 OR로 검색하며 숨김 상태를 제외한다', async () => {
     const { service, orderRepository } = createAdminService(null);
 
     await service.getRecentOrders(undefined, 1, 20, '홍길동');
@@ -449,8 +498,14 @@ describe('AdminService.getRecentOrders', () => {
     expect(orderRepository.findAndCount).toHaveBeenCalledWith(
       expect.objectContaining({
         where: [
-          { buyerName: ILike('%홍길동%') },
-          { buyerEmail: ILike('%홍길동%') },
+          {
+            status: Not(In([...HIDDEN_ORDER_STATUSES])),
+            buyerName: ILike('%홍길동%'),
+          },
+          {
+            status: Not(In([...HIDDEN_ORDER_STATUSES])),
+            buyerEmail: ILike('%홍길동%'),
+          },
         ],
       }),
     );

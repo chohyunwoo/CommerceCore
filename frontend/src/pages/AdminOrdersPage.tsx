@@ -47,9 +47,10 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
   CANCELLED: '취소됨',
 };
 
+// 결제 미완료(PENDING)는 관리자 처리 대상이 아니라 목록/탭에서 제외한다(결정 44).
+// '전체'도 백엔드에서 PENDING을 제외한 결과를 반환한다.
 const ORDER_STATUS_TABS: { label: string; status: OrderStatus | '' }[] = [
   { label: '전체', status: '' },
-  { label: STATUS_LABEL.PENDING, status: 'PENDING' },
   { label: STATUS_LABEL.PAID, status: 'PAID' },
   { label: STATUS_LABEL.SHIPPED, status: 'SHIPPED' },
   { label: STATUS_LABEL.DELIVERED, status: 'DELIVERED' },
