@@ -25,6 +25,37 @@
   height: 56px;
 }
 
+/* 데스크톱: 래퍼는 레이아웃에서 사라지고 자식(header-left/right)이 그리드에 직접 참여 */
+.header-menu {
+  display: contents;
+}
+
+.header-left { order: 1; }
+.header-logo { order: 2; }
+.header-right { order: 3; }
+
+/* 모바일 햄버거 버튼 (데스크톱에선 숨김) */
+.header-toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.header-toggle-bar {
+  display: block;
+  width: 20px;
+  height: 1.5px;
+  background: var(--text);
+  transition: transform 0.2s, opacity 0.2s;
+}
+
 .header-left,
 .header-right {
   display: flex;
@@ -1446,5 +1477,174 @@
   }
   .admin-content {
     padding: 24px 20px 48px;
+  }
+}
+
+/* ============================================================
+   반응형 (모바일/태블릿)
+   ============================================================ */
+
+/* 테이블 가로 스크롤 래퍼 — 좁은 화면에서 페이지 전체가 넘치지 않고
+   테이블만 내부 스크롤되도록 */
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 태블릿 이하 */
+@media (max-width: 900px) {
+  .product-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .product-detail-grid {
+    gap: 40px;
+  }
+}
+
+/* 모바일 (헤더 햄버거 전환 포함) */
+@media (max-width: 768px) {
+  /* --- 헤더: 햄버거 메뉴로 전환 --- */
+  #site-header {
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+  }
+  .header-toggle {
+    display: inline-flex;
+    order: 0;
+    z-index: 2;
+  }
+  .header-logo {
+    order: 1;
+    margin: 0 auto;
+    padding-right: 32px; /* 햄버거 폭만큼 보정해 시각적 중앙 정렬 */
+  }
+  /* 펼침 메뉴 패널 */
+  .header-menu {
+    display: none;
+    position: absolute;
+    top: 56px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 10px 16px rgba(0, 0, 0, 0.05);
+    padding: 8px 20px 16px;
+  }
+  #site-header.open .header-menu {
+    display: flex;
+  }
+  .header-left,
+  .header-right {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    width: 100%;
+  }
+  .header-left a,
+  .header-right a,
+  .header-logout-btn,
+  .header-username {
+    display: block;
+    width: 100%;
+    padding: 13px 0;
+    font-size: 14px;
+    opacity: 0.85;
+    border-bottom: 1px solid #f2f2f2;
+  }
+  /* 열림 상태 햄버거 → X 아이콘 */
+  #site-header.open .header-toggle-bar:nth-child(1) {
+    transform: translateY(5.5px) rotate(45deg);
+  }
+  #site-header.open .header-toggle-bar:nth-child(2) {
+    opacity: 0;
+  }
+  #site-header.open .header-toggle-bar:nth-child(3) {
+    transform: translateY(-5.5px) rotate(-45deg);
+  }
+
+  /* --- 페이지 여백 축소 --- */
+  #product-list,
+  #product-detail,
+  #cart,
+  #image-search {
+    padding: 24px 20px;
+  }
+  .form-page {
+    padding: 40px 20px;
+  }
+  #order-complete {
+    padding: 64px 20px;
+  }
+
+  /* --- 상품 목록: 2열 --- */
+  .product-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 28px 14px;
+  }
+
+  /* --- 상품 상세: 1열 스택 --- */
+  .product-detail-grid {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+  .product-detail-info {
+    position: static;
+    top: auto;
+  }
+  .detail-name {
+    font-size: 22px;
+  }
+  .detail-price {
+    font-size: 16px;
+    margin-bottom: 28px;
+  }
+
+  /* --- 카테고리 필터 가로 스크롤 --- */
+  .category-filter {
+    gap: 24px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+  .category-filter button {
+    flex: 0 0 auto;
+  }
+
+  /* --- 장바구니 --- */
+  .cart-footer {
+    justify-content: stretch;
+  }
+  .cart-summary {
+    min-width: 0;
+    width: 100%;
+  }
+
+  /* --- 주문 완료 링크 세로 스택 --- */
+  .complete-links {
+    flex-direction: column;
+  }
+  .complete-links .btn {
+    width: 100%;
+  }
+  .page-title {
+    font-size: 20px;
+    margin-bottom: 32px;
+  }
+
+  /* --- 관리자 테이블 가로 스크롤 --- */
+  .admin-content,
+  #admin-dashboard {
+    overflow-x: auto;
+  }
+}
+
+/* 소형 모바일 */
+@media (max-width: 400px) {
+  .product-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 22px 12px;
   }
 }

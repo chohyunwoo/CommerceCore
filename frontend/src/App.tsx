@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { Link, Route, Routes } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, Route, Routes, useLocation } from 'react-router-dom';
 import { ProductListPage } from './pages/ProductListPage';
 import { ProductDetailPage } from './pages/ProductDetailPage';
 import { CartPage } from './pages/CartPage';
@@ -39,22 +39,43 @@ function AuthHeaderLinks() {
 }
 
 function App() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const location = useLocation();
+
   useEffect(() => {
     prefetchImageEmbeddingModel();
   }, []);
 
+  // 라우트 이동 시 모바일 메뉴 자동 닫기
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
+
   return (
     <>
-      <header id="site-header">
-        <nav className="header-left">
-          <Link to="/">Shop</Link>
-          <Link to="/orders/lookup">주문조회</Link>
-          <Link to="/image-search">이미지 검색</Link>
-        </nav>
+      <header id="site-header" className={menuOpen ? 'open' : undefined}>
+        <button
+          type="button"
+          className="header-toggle"
+          aria-label="메뉴 열기/닫기"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((v) => !v)}
+        >
+          <span className="header-toggle-bar" />
+          <span className="header-toggle-bar" />
+          <span className="header-toggle-bar" />
+        </button>
         <Link to="/" className="header-logo">CommerceCore</Link>
-        <div className="header-right">
-          <Link to="/cart">장바구니</Link>
-          <AuthHeaderLinks />
+        <div className="header-menu" onClick={() => setMenuOpen(false)}>
+          <nav className="header-left">
+            <Link to="/">Shop</Link>
+            <Link to="/orders/lookup">주문조회</Link>
+            <Link to="/image-search">이미지 검색</Link>
+          </nav>
+          <div className="header-right">
+            <Link to="/cart">장바구니</Link>
+            <AuthHeaderLinks />
+          </div>
         </div>
       </header>
       <main id="content">
