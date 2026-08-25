@@ -106,9 +106,19 @@ export class ProductsService {
     return product;
   }
 
-  async searchByImage(embedding: number[]): Promise<ProductSearchResult[]> {
+  async searchByImage(
+    embedding: number[],
+    category?: string,
+  ): Promise<ProductSearchResult[]> {
+    // 카테고리를 지정하면 그 카테고리 안에서만 시각 유사도로 랭킹한다(결정 32).
+    // 자동 카테고리 판정은 하의에서 신뢰도가 낮아, 사용자가 직접 좁히는 방식을 택함.
+    const trimmedCategory = category?.trim();
     const products = await this.productRepository.find({
-      where: { imageEmbedding: Not(IsNull()), isActive: true },
+      where: {
+        imageEmbedding: Not(IsNull()),
+        isActive: true,
+        ...(trimmedCategory ? { category: { name: trimmedCategory } } : {}),
+      },
     });
 
     return products

@@ -1,5 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { ArrayMaxSize, ArrayNotEmpty, IsNumber } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 export class SearchByImageDto {
   @ApiProperty({
@@ -12,4 +18,14 @@ export class SearchByImageDto {
   @ArrayMaxSize(1024)
   @IsNumber({}, { each: true })
   embedding: number[];
+
+  @ApiPropertyOptional({
+    description:
+      '검색 대상 카테고리 이름(신발/상의/하의). 생략하면 전체 카테고리에서 검색. ' +
+      '자동 카테고리 판정(특히 하의)이 신뢰도가 낮아, 사용자가 직접 카테고리를 좁혀 ' +
+      '해당 카테고리 안에서만 시각 유사도로 랭킹하도록 함(결정 32).',
+  })
+  @IsOptional()
+  @IsString()
+  category?: string;
 }
