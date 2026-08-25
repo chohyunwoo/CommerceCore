@@ -1,0 +1,45 @@
+{
+  "approved": true,
+  "authority": {
+    "identifier": "gusdndlek12@naver.com",
+    "role": "project-owner"
+  },
+  "checkpoint_receipt_sha256": "ef7632d7188d2b7722e0f87ede6c21b4261ce942fb976d8585664cd743a0dd89",
+  "destination": {
+    "design_md_sha256": "cb50a8149ec43f9cff1ec2e0437aa791768509f781aa13a9e87c1ca166150801",
+    "system_tree_sha256": "1fea4bacd001389f8a6f720d7d246468a68e6d5dcc6727b537f695ef49f4b71a"
+  },
+  "kind": "design-md-core-project-adoption-report",
+  "previous": {
+    "design_md": {
+      "present": false,
+      "sha256": null
+    },
+    "system": {
+      "present": false,
+      "tree_sha256": null
+    }
+  },
+  "project_proof": {
+    "authority_mode": "core-v2-project-system",
+    "pass": true,
+    "profile": "portable-core",
+    "sha256": "1fa959376eaecaaa40fb6ee2453383d940067bf8bb15f7556015b0394eb6db53"
+  },
+  "recovery": {
+    "action": null,
+    "recovered": false
+  },
+  "report_path": ".omd/adoptions/b1f5c46f523bf84f.json",
+  "schema_version": "2.0.0",
+  "source_package": {
+    "adoption_receipt_sha256": "5634f60ba4a981a5b71fa0656fb781327146aa45808c6d773a47c5c92722d743",
+    "coverage_sha256": "d3b477f2da96cbdf632fa3e0b97890c3b47e7a5950ef5eb6d163ce22b8b77fdc",
+    "design_md_sha256": "cb50a8149ec43f9cff1ec2e0437aa791768509f781aa13a9e87c1ca166150801",
+    "graph_sha256": "41e7ed8292128441b1185463e9fd0dcdec177967f72a40d1f88414fb389b088f",
+    "manifest_sha256": "fbe3a448bed9e01bfc07b3bc1f58d70a1accd83981e2ba55a80a98ec4453e82a",
+    "provenance_sha256": "dde510193283f3ca58589c998444f577731cac9a8bc915ca25d26b301e296854"
+  },
+  "status": "adopted",
+  "transaction_id": "b1f5c46f523bf84f"
+}

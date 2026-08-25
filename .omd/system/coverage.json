@@ -1,0 +1,101 @@
+{
+  "checks": {
+    "assets_fonts_licenses": {
+      "method": "controller-computed-system-graph-v2",
+      "pass": true
+    },
+    "bound_system_authority": {
+      "method": "controller-computed-system-graph-v2",
+      "pass": true
+    },
+    "component_state_coverage": {
+      "method": "controller-computed-system-graph-v2",
+      "pass": true
+    },
+    "contrast": {
+      "method": "controller-computed-system-graph-v2",
+      "pass": true
+    },
+    "implementation_contract_complete": {
+      "method": "controller-computed-system-graph-v2",
+      "pass": true
+    },
+    "opaque_extension_preservation": {
+      "method": "controller-computed-system-graph-v2",
+      "pass": true
+    },
+    "portable_core_structure": {
+      "method": "controller-computed-system-graph-v2",
+      "pass": true
+    },
+    "reduced_motion": {
+      "method": "controller-computed-system-graph-v2",
+      "pass": true
+    },
+    "responsive_320_200": {
+      "method": "controller-computed-system-graph-v2",
+      "pass": true
+    },
+    "token_reference_closure": {
+      "method": "controller-computed-system-graph-v2",
+      "pass": true
+    },
+    "unknown_absence": {
+      "method": "controller-computed-system-graph-v2",
+      "pass": true
+    }
+  },
+  "design_md_sha256": "cb50a8149ec43f9cff1ec2e0437aa791768509f781aa13a9e87c1ca166150801",
+  "graph_sha256": "41e7ed8292128441b1185463e9fd0dcdec177967f72a40d1f88414fb389b088f",
+  "groups": {
+    "components-states": {
+      "evidence": [
+        "frontend/src/App.css"
+      ],
+      "status": "covered"
+    },
+    "content-locales": {
+      "evidence": [
+        "CLAUDE.md",
+        ".claude/data/references/farfetch/DESIGN.md"
+      ],
+      "status": "covered"
+    },
+    "experience": {
+      "evidence": [
+        "CLAUDE.md",
+        "frontend/src/App.css"
+      ],
+      "status": "covered"
+    },
+    "foundations": {
+      "evidence": [
+        "frontend/src/index.css",
+        "frontend/src/App.css"
+      ],
+      "status": "covered"
+    },
+    "governance": {
+      "evidence": [
+        "CLAUDE.md",
+        "frontend/src/index.css"
+      ],
+      "status": "covered"
+    },
+    "layout-platforms": {
+      "evidence": [
+        "frontend/src/App.css",
+        "frontend/src/index.css"
+      ],
+      "status": "covered"
+    },
+    "typography-assets": {
+      "evidence": [
+        "frontend/src/App.css",
+        "frontend/src/index.css"
+      ],
+      "status": "covered"
+    }
+  },
+  "schema_version": "2.0.0"
+}

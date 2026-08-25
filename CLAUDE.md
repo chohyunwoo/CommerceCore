@@ -637,3 +637,20 @@ CREATE TABLE order_items (
 38. ~~배포 시 마이그레이션 자동 적용(migrationsRun: true) 전환 (결정 29 트리거 해소)~~ ✅ — 2026-08-24, 이슈 #98
 39. 후속(사용자, 1회) — 프로덕션 DB에 DINOv2 임베딩 재계산(`embeddings:compute`) 필요(모델 변경으로 512차원 CLIP 임베딩과 섞이면 이미지 검색 어긋남). ※ 프로덕션 스키마 마이그레이션은 #98로 배포 시 자동 적용됨.
 40. 다음 기능 검토 중 — Double-entry Ledger, 멀티 PG Orchestration (PortOne 추가)
+
+
+<!-- omd:start v=1 hash=a0905ab87d60 -->
+# Design System (oh-my-design)
+
+Read the standalone design contract at **@./DESIGN.md** before any UI,
+styling, microcopy, or motion work. When a valid adopted Core v2
+`.omd/system/manifest.json` declares `profile: portable-core` and binds exact
+graph/projection hashes, the System Graph is machine authority and DESIGN.md is
+its standalone projection. A migration candidate is never adopted authority.
+
+Preference log (pending corrections): @./.omd/preferences.md
+
+Precedence: pending explicit preference corrections > adopted Bound System
+graph/standalone DESIGN.md > your defaults. Fold pending corrections into the
+graph and regenerate the projection before clearing them.
+<!-- omd:end -->
