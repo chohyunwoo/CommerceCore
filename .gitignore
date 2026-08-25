@@ -8,3 +8,13 @@ dist-ssr/
 *.log
 .DS_Store
 .omc/
+
+# oh-my-design / agent tooling — machine-local installs, not project source.
+# (DESIGN.md, .omd/, AGENTS.md, .cursor/rules/omd-design.mdc ARE tracked.)
+.claude/
+.cursor/skills/
+backend/.claude/
+backend/.agents/
+backend/.codex/
+backend/.cursor/
+backend/.opencode/

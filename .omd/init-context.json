@@ -1,0 +1,16 @@
+{
+  "reference_id": "farfetch",
+  "description": "이커머스 패션 쇼핑몰(신발/상의/하의), 프로덕션 품질 포트폴리오, 미니멀·모노크롬 커머스 UI. 기존 React(Vite) 프론트엔드가 이미 구현되어 있어 실제 토큰은 코드에서 가져오고 farfetch는 voice/방향 영감으로만 사용.",
+  "mode": "inspired",
+  "delta_set": {
+    "axes": {},
+    "voiceHints": [
+      "명사 위주 카테고리·라벨",
+      "느낌표·과장 없는 담백한 한국어",
+      "상태/오류 메시지는 필요한 것을 구체적으로 안내"
+    ],
+    "matchedKeywords": ["minimal", "trustworthy", "monochrome", "editorial", "flat"],
+    "warnings": []
+  },
+  "bootstrapped_at": "2026-08-25"
+}

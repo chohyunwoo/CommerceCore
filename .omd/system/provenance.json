@@ -1,0 +1,93 @@
+{
+  "decisions": [
+    {
+      "evidence": [
+        "CLAUDE.md"
+      ],
+      "path": "/identity/name",
+      "source_class": "repository-fact"
+    },
+    {
+      "evidence": [
+        ".omd/init-context.json"
+      ],
+      "path": "/identity/kind",
+      "source_class": "prompt-fact"
+    },
+    {
+      "evidence": [
+        "CLAUDE.md",
+        "frontend/src/App.css"
+      ],
+      "path": "/experience/summary",
+      "source_class": "repository-fact"
+    },
+    {
+      "evidence": [
+        "CLAUDE.md"
+      ],
+      "path": "/experience/primary_tasks",
+      "source_class": "repository-fact"
+    },
+    {
+      "evidence": [
+        "frontend/src/index.css",
+        "frontend/src/App.css"
+      ],
+      "path": "/experience/design_direction",
+      "source_class": "repository-fact"
+    },
+    {
+      "evidence": [
+        "frontend/src/index.css"
+      ],
+      "path": "/foundations/tokens/color.ink",
+      "source_class": "repository-fact"
+    },
+    {
+      "evidence": [
+        "frontend/src/index.css"
+      ],
+      "path": "/foundations/tokens/color.hairline",
+      "source_class": "repository-fact"
+    },
+    {
+      "evidence": [
+        "frontend/src/App.css"
+      ],
+      "path": "/foundations/tokens/radius.none",
+      "source_class": "repository-fact"
+    },
+    {
+      "evidence": [
+        "frontend/src/App.css"
+      ],
+      "path": "/foundations/tokens/radius.card",
+      "source_class": "repository-fact"
+    },
+    {
+      "evidence": [
+        ".claude/data/references/farfetch/DESIGN.md"
+      ],
+      "path": "/foundations/reduced_motion",
+      "source_class": "agent-proposed-greenfield-decision"
+    },
+    {
+      "evidence": [
+        ".claude/data/references/farfetch/DESIGN.md"
+      ],
+      "path": "/content_locales/voice",
+      "source_class": "verified-reference-inspiration"
+    },
+    {
+      "evidence": [
+        "frontend/src/App.css"
+      ],
+      "path": "/layout_platforms/minimum_width_px",
+      "source_class": "repository-fact"
+    }
+  ],
+  "design_md_sha256": "cb50a8149ec43f9cff1ec2e0437aa791768509f781aa13a9e87c1ca166150801",
+  "graph_sha256": "41e7ed8292128441b1185463e9fd0dcdec177967f72a40d1f88414fb389b088f",
+  "schema_version": "2.0.0"
+}
