@@ -20,8 +20,6 @@ export interface FindProductsOptions {
   page?: number;
   limit?: number;
   search?: string;
-  minPrice?: number;
-  maxPrice?: number;
   sort?: ProductSort;
 }
 
@@ -45,7 +43,7 @@ export class ProductsService {
   ) {}
 
   async findAll(options: FindProductsOptions = {}): Promise<PaginatedProducts> {
-    const { category, search, minPrice, maxPrice, sort } = options;
+    const { category, search, sort } = options;
     const page = options.page ?? 1;
     const limit = options.limit ?? 12;
 
@@ -64,13 +62,6 @@ export class ProductsService {
         search: `%${escapeLike(trimmedSearch)}%`,
       });
     }
-    if (minPrice != null) {
-      qb.andWhere('product.basePrice >= :minPrice', { minPrice });
-    }
-    if (maxPrice != null) {
-      qb.andWhere('product.basePrice <= :maxPrice', { maxPrice });
-    }
-
     // 정렬은 화이트리스트로만 매핑(사용자 입력을 컬럼/방향에 직접 넣지 않음).
     switch (sort) {
       case ProductSort.PRICE_ASC:
