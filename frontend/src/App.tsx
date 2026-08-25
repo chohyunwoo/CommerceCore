@@ -41,6 +41,7 @@ function AuthHeaderLinks() {
 function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
+  const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
     prefetchImageEmbeddingModel();
@@ -69,7 +70,8 @@ function App() {
         <div className="header-menu" onClick={() => setMenuOpen(false)}>
           <nav className="header-left">
             <Link to="/">Shop</Link>
-            <Link to="/orders/lookup">주문조회</Link>
+            {/* 주문조회는 게스트 전용 — 로그인 사용자는 마이페이지로 조회 */}
+            {!authLoading && !user && <Link to="/orders/lookup">주문조회</Link>}
             <Link to="/image-search">이미지 검색</Link>
           </nav>
           <div className="header-right">
